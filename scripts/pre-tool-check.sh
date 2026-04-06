@@ -211,14 +211,18 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
               exit 2
               ;;
             redact)
-              # Execute the redacted version of the command ourselves,
-              # then deny the original so it doesn't run with PII.
-              REDACTED_CMD=$(echo "$STATEMENT" | sed "s|$WRITE_CONTENT|$REDACTED|")
-              eval "$REDACTED_CMD" 2>/dev/null
+              # Allow but rewrite the command with redacted content
+              REDACTED_CMD=$(echo "$STATEMENT" | python3 -c "
+import sys
+stmt = sys.stdin.read().strip()
+original = '''$WRITE_CONTENT'''
+redacted = '''$REDACTED'''
+print(stmt.replace(original, redacted))
+" 2>/dev/null || echo "$STATEMENT")
               jq -n \
-                --arg user "AxonFlow: PII redacted — file written with redacted content." \
-                --arg agent "The file was written with PII automatically redacted by AxonFlow governance. The redacted content was used instead of the original. No further action needed." \
-                '{permission: "deny", user_message: $user, agent_message: $agent}'
+                --arg cmd "$REDACTED_CMD" \
+                --arg user "AxonFlow: PII auto-redacted in file write." \
+                '{permission: "allow", updated_input: {command: $cmd}, user_message: $user}'
               exit 0
               ;;
             warn)
