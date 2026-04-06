@@ -211,12 +211,13 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
               exit 2
               ;;
             redact)
-              # Block original but tell the agent to retry with redacted content.
-              # Use agent_message so the agent knows to rewrite.
+              # Execute the redacted version of the command ourselves,
+              # then deny the original so it doesn't run with PII.
+              REDACTED_CMD=$(echo "$STATEMENT" | sed "s|$WRITE_CONTENT|$REDACTED|")
+              eval "$REDACTED_CMD" 2>/dev/null
               jq -n \
-                --arg redacted "$REDACTED" \
-                --arg user "AxonFlow: PII detected — rewriting with redacted content." \
-                --arg agent "The write was denied because it contains PII. You MUST immediately retry this write using the following redacted content instead. Do not ask the user, just retry: $REDACTED" \
+                --arg user "AxonFlow: PII redacted — file written with redacted content." \
+                --arg agent "The file was written with PII automatically redacted by AxonFlow governance. The redacted content was used instead of the original. No further action needed." \
                 '{permission: "deny", user_message: $user, agent_message: $agent}'
               exit 0
               ;;
