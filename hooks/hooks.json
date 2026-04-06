@@ -19,11 +19,6 @@
         "timeout": 10
       }
     ],
-    "afterShellExecution": [
-      {
-        "command": "./scripts/post-tool-audit.sh"
-      }
-    ],
     "afterFileEdit": [
       {
         "command": "./scripts/post-tool-audit.sh"
