@@ -210,12 +210,18 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
               echo "AxonFlow: PII detected in file write content. Redacted: ${REDACTED}" >&2
               exit 2
               ;;
+            redact)
+              # Replace original content with redacted version in the command
+              REDACTED_CMD=$(echo "$STATEMENT" | sed "s|$WRITE_CONTENT|$REDACTED|")
+              jq -n --arg cmd "$REDACTED_CMD" '{permission: "allow", updated_input: {command: $cmd}}'
+              exit 0
+              ;;
             warn)
               echo "AxonFlow warning: PII detected in file write content. Redacted: ${REDACTED}" >&2
               # Warn but allow — exit 0
               ;;
-            redact|log)
-              # Allow — server-side handles redaction/logging
+            log)
+              # Allow silently — server-side handles logging
               ;;
           esac
         fi
