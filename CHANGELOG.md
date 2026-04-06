@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.0] - 2026-04-06
+
+### Added
+
+- `AXONFLOW_TIMEOUT_SECONDS` environment variable to tune Cursor hook HTTP timeouts for remote or high-latency AxonFlow deployments.
+- Plugin logo for marketplace and directory listings.
+- `SECURITY.md` with plugin-specific vulnerability reporting guidance.
+
+### Changed
+
+- README now removes the old `CURSOR_PLUGIN_ROOT` setup step and clarifies that the Cursor plugin itself does not send direct telemetry pings.
+
 ## [0.1.0] - 2026-04-06
 
 ### Added
@@ -23,6 +35,7 @@
 
 - `AXONFLOW_ENDPOINT` — AxonFlow Agent URL (default: `http://localhost:8080`)
 - `AXONFLOW_AUTH` — Base64-encoded `clientId:clientSecret` for Basic auth
+- `AXONFLOW_TIMEOUT_SECONDS` — optional override for hook HTTP timeouts
 - `PII_ACTION` — PII enforcement mode: `block`, `redact` (default), `warn`, `log`
 - Plugin installed at `~/.cursor/plugins/local/axonflow-cursor-plugin` (copy, not symlink)
 - hooks.json requires `"version": 1` for Cursor compatibility
