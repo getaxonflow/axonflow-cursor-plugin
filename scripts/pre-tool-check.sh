@@ -204,24 +204,20 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
         PII_ALLOWED=$(echo "$PII_RESULT" | jq -r 'if .allowed == false then "false" else "true" end' 2>/dev/null || echo "true")
         if [ -n "$REDACTED" ] && [ "$REDACTED" != "null" ] && [ "$REDACTED" != "$WRITE_CONTENT" ]; then
           # Respect PII_ACTION: block (default) | warn | log | redact
-          PII_ACTION="${PII_ACTION:-redact}"
+          # PII_ACTION controls hook behavior for PII in file writes.
+          # Hooks can block or allow — they cannot rewrite/redact content.
+          # True redaction happens server-side via the API/MCP tools.
+          PII_ACTION="${PII_ACTION:-warn}"
           case "$PII_ACTION" in
             block)
-              echo "AxonFlow: PII detected in file write content. Redacted: ${REDACTED}" >&2
-              exit 2
-              ;;
-            redact)
-              # Hooks cannot rewrite shell commands — block and show redacted version
-              # so the user can re-submit with safe content.
-              echo "AxonFlow: PII detected — use redacted content instead: ${REDACTED}" >&2
+              echo "AxonFlow: PII detected in file write content. Use redacted version: ${REDACTED}" >&2
               exit 2
               ;;
             warn)
-              echo "AxonFlow warning: PII detected in file write content. Redacted: ${REDACTED}" >&2
-              # Warn but allow — exit 0
+              echo "AxonFlow warning: PII detected in file write content. Consider using: ${REDACTED}" >&2
               ;;
-            log)
-              # Allow silently — server-side handles logging
+            *)
+              # log, redact, or anything else — allow silently
               ;;
           esac
         fi
