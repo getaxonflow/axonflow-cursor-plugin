@@ -13,17 +13,6 @@
         "command": "./scripts/post-tool-audit.sh"
       }
     ],
-    "beforeShellExecution": [
-      {
-        "command": "./scripts/pre-tool-check.sh",
-        "timeout": 10
-      }
-    ],
-    "afterShellExecution": [
-      {
-        "command": "./scripts/post-tool-audit.sh"
-      }
-    ],
     "afterFileEdit": [
       {
         "command": "./scripts/post-tool-audit.sh"
