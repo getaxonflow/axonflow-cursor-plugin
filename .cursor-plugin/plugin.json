@@ -1,0 +1,15 @@
+{
+  "name": "axonflow",
+  "displayName": "AxonFlow Governance",
+  "description": "Policy enforcement, PII detection, and audit trails for Cursor. Govern tool execution, scan outputs for sensitive data, and maintain compliance-grade records of every action.",
+  "version": "0.1.0",
+  "author": {
+    "name": "AxonFlow",
+    "url": "https://getaxonflow.com"
+  },
+  "homepage": "https://docs.getaxonflow.com/docs/integration/cursor/",
+  "repository": "https://github.com/getaxonflow/axonflow-cursor-plugin",
+  "keywords": ["governance", "security", "pii", "audit", "compliance", "policy-enforcement"],
+  "license": "MIT",
+  "category": "security"
+}

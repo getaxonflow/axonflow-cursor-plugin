@@ -1,0 +1,16 @@
+---
+description: AxonFlow governance context — policy enforcement is active on this project
+alwaysApply: true
+---
+
+This project has AxonFlow governance enabled. The following rules apply to all tool calls:
+
+1. **Dangerous commands are blocked.** Reverse shells, destructive filesystem operations, credential file access, cloud metadata SSRF, and path traversal are blocked by policy before execution.
+
+2. **PII is scanned.** Tool outputs are scanned for sensitive data (SSN, credit cards, email, phone, Aadhaar, PAN). If PII is detected, use the redacted version in your response.
+
+3. **All tool calls are audited.** Every governed tool execution (Bash, Write, Edit, NotebookEdit, MCP tools) is recorded in the AxonFlow audit trail with timestamp, input, output, and policy decision.
+
+4. **If a tool call is blocked**, report the block reason to the user. Do not attempt to bypass the policy or retry with a modified command that circumvents the block.
+
+5. **Available governance tools** (via MCP): `check_policy`, `check_output`, `audit_tool_call`, `list_policies`, `get_policy_stats`, `search_audit_events`. Use these for explicit policy queries when needed.
