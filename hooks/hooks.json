@@ -4,7 +4,7 @@
     "preToolUse": [
       {
         "command": "./scripts/pre-tool-check.sh",
-        "matcher": "Shell",
+        "matcher": "Shell|Write|Edit|Read",
         "timeout": 10
       }
     ],
