@@ -23,6 +23,7 @@ fi
 
 ENDPOINT="${AXONFLOW_ENDPOINT:-http://localhost:8080}"
 AUTH="${AXONFLOW_AUTH:-}"
+REQUEST_TIMEOUT_SECONDS="${AXONFLOW_TIMEOUT_SECONDS:-8}"
 
 # Build auth header array safely (avoids word-splitting)
 AUTH_HEADER=()
@@ -85,7 +86,7 @@ if [ -z "$STATEMENT" ] || [ "$STATEMENT" = "null" ] || [ "$STATEMENT" = "{}" ]; 
 fi
 
 # Call AxonFlow check_policy via MCP server
-RESPONSE=$(curl -s --max-time 8 -X POST "${ENDPOINT}/api/v1/mcp-server" \
+RESPONSE=$(curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -X POST "${ENDPOINT}/api/v1/mcp-server" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   "${AUTH_HEADER[@]}" \
@@ -139,7 +140,7 @@ POLICIES_EVALUATED=$(echo "$TOOL_RESULT" | jq -r '.policies_evaluated // 0' 2>/d
 
 if [ "$ALLOWED" = "false" ]; then
   # Record the blocked attempt in the audit trail (fire-and-forget)
-  curl -s --max-time 5 -X POST "${ENDPOINT}/api/v1/mcp-server" \
+  curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -X POST "${ENDPOINT}/api/v1/mcp-server" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json" \
     "${AUTH_HEADER[@]}" \
@@ -179,7 +180,7 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
     # Strip the command prefix (echo, printf, cat <<)
     WRITE_CONTENT=$(echo "$WRITE_CONTENT" | sed -E 's/^(echo|printf|cat\s+<<[^ ]*)\s+//; s/^"//; s/"$//')
     if [ -n "$WRITE_CONTENT" ] && [ ${#WRITE_CONTENT} -gt 5 ]; then
-      PII_RESPONSE=$(curl -s --max-time 5 -X POST "${ENDPOINT}/api/v1/mcp-server" \
+      PII_RESPONSE=$(curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -X POST "${ENDPOINT}/api/v1/mcp-server" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json" \
         "${AUTH_HEADER[@]}" \
