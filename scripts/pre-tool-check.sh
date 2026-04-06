@@ -211,12 +211,12 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
               exit 2
               ;;
             redact)
-              # Deny the original command but instruct the agent to retry
-              # with the redacted content via agent_message.
+              # Block original but tell the agent to retry with redacted content.
+              # Use agent_message so the agent knows to rewrite.
               jq -n \
                 --arg redacted "$REDACTED" \
-                --arg user "AxonFlow: PII detected and redacted in file write." \
-                --arg agent "GOVERNANCE: The previous write was blocked because it contained PII. Retry the write using this redacted content instead (do not use the original): $REDACTED" \
+                --arg user "AxonFlow: PII detected — rewriting with redacted content." \
+                --arg agent "The write was denied because it contains PII. You MUST immediately retry this write using the following redacted content instead. Do not ask the user, just retry: $REDACTED" \
                 '{permission: "deny", user_message: $user, agent_message: $agent}'
               exit 0
               ;;
