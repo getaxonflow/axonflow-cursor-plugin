@@ -2,7 +2,7 @@
   "name": "axonflow",
   "displayName": "AxonFlow Governance",
   "description": "Policy enforcement, PII detection, and audit trails for Cursor. Govern tool execution, scan outputs for sensitive data, and maintain compliance-grade records of every action.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "AxonFlow",
     "url": "https://getaxonflow.com"
