@@ -204,7 +204,7 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
         PII_ALLOWED=$(echo "$PII_RESULT" | jq -r 'if .allowed == false then "false" else "true" end' 2>/dev/null || echo "true")
         if [ -n "$REDACTED" ] && [ "$REDACTED" != "null" ] && [ "$REDACTED" != "$WRITE_CONTENT" ]; then
           # Respect PII_ACTION: block (default) | warn | log | redact
-          PII_ACTION="${PII_ACTION:-block}"
+          PII_ACTION="${PII_ACTION:-redact}"
           case "$PII_ACTION" in
             block)
               echo "AxonFlow: PII detected in file write content. Redacted: ${REDACTED}" >&2
