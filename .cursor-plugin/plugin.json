@@ -11,5 +11,6 @@
   "repository": "https://github.com/getaxonflow/axonflow-cursor-plugin",
   "keywords": ["governance", "security", "pii", "audit", "compliance", "policy-enforcement"],
   "license": "MIT",
+  "logo": "assets/logo.png",
   "category": "security"
 }
