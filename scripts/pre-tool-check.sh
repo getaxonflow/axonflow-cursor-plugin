@@ -36,9 +36,15 @@ INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}')
 
-# Skip if no tool name
+# Handle beforeShellExecution format (no tool_name, has command directly)
 if [ -z "$TOOL_NAME" ]; then
-  exit 0
+  DIRECT_COMMAND=$(echo "$INPUT" | jq -r '.command // empty')
+  if [ -n "$DIRECT_COMMAND" ]; then
+    TOOL_NAME="Shell"
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '{command: .command}')
+  else
+    exit 0
+  fi
 fi
 
 # Derive connector type: cursor.{ToolName}
@@ -46,7 +52,7 @@ CONNECTOR_TYPE="cursor.${TOOL_NAME}"
 
 # Extract the statement to evaluate based on tool type
 case "$TOOL_NAME" in
-  Bash)
+  Bash|Shell)
     STATEMENT=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
     ;;
   Write)

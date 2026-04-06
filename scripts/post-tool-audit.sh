@@ -26,11 +26,18 @@ INPUT=$(cat)
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null || echo "{}")
-TOOL_RESPONSE=$(echo "$INPUT" | jq -c '.tool_response // {}' 2>/dev/null || echo "{}")
+TOOL_RESPONSE=$(echo "$INPUT" | jq -c '.tool_response // .tool_output // {}' 2>/dev/null || echo "{}")
 
-# Skip if no tool name
+# Handle afterShellExecution format (no tool_name, has command+output directly)
 if [ -z "$TOOL_NAME" ]; then
-  exit 0
+  DIRECT_COMMAND=$(echo "$INPUT" | jq -r '.command // empty' 2>/dev/null || echo "")
+  if [ -n "$DIRECT_COMMAND" ]; then
+    TOOL_NAME="Shell"
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '{command: .command}' 2>/dev/null || echo "{}")
+    TOOL_RESPONSE=$(echo "$INPUT" | jq -c '{stdout: .output, exitCode: 0}' 2>/dev/null || echo "{}")
+  else
+    exit 0
+  fi
 fi
 
 CONNECTOR_TYPE="cursor.${TOOL_NAME}"
@@ -75,7 +82,7 @@ TRUNCATED_OUTPUT=$(echo "$TOOL_RESPONSE" | jq -c '.' 2>/dev/null | cut -c1-500 |
 # 2. Scan tool output for PII/secrets (synchronous — returns context if PII found)
 OUTPUT_TEXT=""
 case "$TOOL_NAME" in
-  Bash)
+  Bash|Shell)
     OUTPUT_TEXT=$(echo "$TOOL_RESPONSE" | jq -r '.stdout // empty' 2>/dev/null || echo "")
     # If stdout is empty but command contains a redirect (echo ... > file),
     # scan the command itself — the PII is in the input, not the output.

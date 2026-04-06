@@ -1,9 +1,22 @@
 {
+  "version": 1,
   "hooks": {
+    "preToolUse": [
+      {
+        "command": "./scripts/pre-tool-check.sh",
+        "matcher": "Shell",
+        "timeout": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "./scripts/post-tool-audit.sh"
+      }
+    ],
     "beforeShellExecution": [
       {
         "command": "./scripts/pre-tool-check.sh",
-        "matcher": ".*"
+        "timeout": 10
       }
     ],
     "afterShellExecution": [
