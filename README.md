@@ -56,7 +56,7 @@ In community mode (`DEPLOYMENT_MODE=community`), no auth is needed.
 | After governed tool call | PostToolUse | `audit_tool_call` records execution in compliance audit trail |
 | After governed tool call | PostToolUse | `check_output` scans output for PII/secrets |
 
-**Governed tools:** `Bash`, `Write`, `Edit`, `NotebookEdit`, and all MCP tools (`mcp__*`).
+**Governed tools:** `Shell`, `Write`, `Edit`, `Read`, `Task`, `NotebookEdit`, and MCP tools (`mcp__*`).
 
 **Fail behavior:**
 - AxonFlow unreachable (network failure) → fail-open, tool execution continues
@@ -101,8 +101,7 @@ axonflow-cursor-plugin/
 │   └── axonflow-governance.mdc  # Always-on governance context
 ├── scripts/
 │   ├── pre-tool-check.sh    # Policy evaluation (PreToolUse)
-│   ├── post-tool-audit.sh   # Audit + PII scan (PostToolUse)
-│   └── mcp-auth-headers.sh  # MCP auth header generation
+│   └── post-tool-audit.sh   # Audit + PII scan (PostToolUse)
 ├── tests/
 │   ├── test-hooks.sh        # Regression tests (mock + live)
 │   └── E2E_TESTING_PLAYBOOK.md
