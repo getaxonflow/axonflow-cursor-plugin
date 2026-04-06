@@ -211,18 +211,11 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
               exit 2
               ;;
             redact)
-              # Allow but rewrite the command with redacted content
-              REDACTED_CMD=$(echo "$STATEMENT" | python3 -c "
-import sys
-stmt = sys.stdin.read().strip()
-original = '''$WRITE_CONTENT'''
-redacted = '''$REDACTED'''
-print(stmt.replace(original, redacted))
-" 2>/dev/null || echo "$STATEMENT")
               jq -n \
-                --arg cmd "$REDACTED_CMD" \
-                --arg user "AxonFlow: PII auto-redacted in file write." \
-                '{permission: "allow", updated_input: {command: $cmd}, user_message: $user}'
+                --arg redacted "$REDACTED" \
+                --arg user "AxonFlow: PII detected — rewriting with redacted content." \
+                --arg agent "The write contained PII and was blocked. Retry the write immediately using this exact redacted content instead of the original: $REDACTED" \
+                '{permission: "deny", user_message: $user, agent_message: $agent}'
               exit 0
               ;;
             warn)
