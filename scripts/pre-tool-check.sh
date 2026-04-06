@@ -211,10 +211,10 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
               exit 2
               ;;
             redact)
-              # Replace original content with redacted version in the command
-              REDACTED_CMD=$(echo "$STATEMENT" | sed "s|$WRITE_CONTENT|$REDACTED|")
-              jq -n --arg cmd "$REDACTED_CMD" '{permission: "allow", updated_input: {command: $cmd}}'
-              exit 0
+              # Hooks cannot rewrite shell commands — block and show redacted version
+              # so the user can re-submit with safe content.
+              echo "AxonFlow: PII detected — use redacted content instead: ${REDACTED}" >&2
+              exit 2
               ;;
             warn)
               echo "AxonFlow warning: PII detected in file write content. Redacted: ${REDACTED}" >&2
