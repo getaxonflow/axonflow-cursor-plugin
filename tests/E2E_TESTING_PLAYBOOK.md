@@ -17,8 +17,8 @@ Covers hook-based governance (automatic), MCP tools (explicit), and edge cases.
 ### Option A: Use the E2E setup script (recommended)
 
 ```bash
-cd /path/to/axonflow-enterprise
-COMMUNITY_REPO=/path/to/axonflow-enterprise ./scripts/setup-e2e-testing.sh community
+cd /Users/saurabhjain/Development/axonflow-enterprise
+COMMUNITY_REPO=/Users/saurabhjain/Development/axonflow-enterprise ./scripts/setup-e2e-testing.sh community
 source /tmp/axonflow-e2e-env.sh
 ```
 
@@ -34,7 +34,7 @@ export AXONFLOW_AUTH=""
 ### Load the plugin in Cursor
 
 ```bash
-export CURSOR_PLUGIN_ROOT=/path/to/axonflow-cursor-plugin
+export CURSOR_PLUGIN_ROOT=/Users/saurabhjain/Development/axonflow-cursor-plugin
 # Load via Cursor plugin settings or --plugin-dir flag
 ```
 
@@ -97,7 +97,7 @@ Use safe equivalents that trigger the same policies:
 ### Hook regression tests
 
 ```bash
-cd /path/to/axonflow-cursor-plugin
+cd /Users/saurabhjain/Development/axonflow-cursor-plugin
 ./tests/test-hooks.sh           # Mock server (offline, fast)
 ./tests/test-hooks.sh --live    # Live AxonFlow (requires running instance)
 ```
