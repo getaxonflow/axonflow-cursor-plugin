@@ -77,10 +77,10 @@ Go to Settings (Cmd+Shift+J) → Plugins. You should see:
 
 | # | What to ask Cursor | Expected behavior | Verified? |
 |---|---|---|---|
-| 2.1 | "Write a file `/tmp/pii-test.txt` with content `Patient SSN is 123-45-6789`" | `preToolUse` fires for Write tool. Policy check runs. PII detected. `afterFileEdit` fires for audit. | Not yet tested |
+| 2.1 | "Write a file `/tmp/pii-test.txt` with content `Name: John Smith, ID: 078-05-1120, Email: john@example.com`" | Hook detects PII via `check_output`, returns `deny` + `agent_message` with redacted version. Agent retries with redacted content. File written with safe content. | Yes — agent retried with `[REDACTED-SSN]` |
 | 2.2 | "Write a file `/tmp/clean-test.txt` with content `Hello world`" | Allowed. No violations. `afterFileEdit` fires for audit. | Not yet tested |
 
-**Note:** Unlike Codex (which can only hook Bash), Cursor's `preToolUse` fires for Write/Read/Shell/MCP/Task tools. This means file write PII detection can be enforced, not just advisory.
+**PII redaction flow:** Cursor writes files via shell `printf` commands. The `beforeShellExecution` hook detects PII in the content via `check_output`, returns `permission: "deny"` with `agent_message` containing the redacted version. The agent sees the denial and retries with redacted content. Controlled by `PII_ACTION` env var: `redact` (default) denies + instructs retry, `block` hard-blocks, `warn` warns but allows, `log` allows silently.
 
 ### 3. MCP tools (explicit)
 
