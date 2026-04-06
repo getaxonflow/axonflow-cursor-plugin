@@ -170,5 +170,45 @@ if [ "$ALLOWED" = "false" ]; then
   exit 2
 fi
 
+# For shell write commands (echo/printf/cat redirecting to file), also scan
+# the content for PII via check_output before allowing.
+if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
+  if echo "$STATEMENT" | grep -qE '(>>?\s*\S|tee\s)'; then
+    # Extract the content being written (everything before the redirect)
+    WRITE_CONTENT=$(echo "$STATEMENT" | sed -E 's/\s*[12]?>>\s*\S+.*//; s/\s*\|\s*tee\s.*//')
+    # Strip the command prefix (echo, printf, cat <<)
+    WRITE_CONTENT=$(echo "$WRITE_CONTENT" | sed -E 's/^(echo|printf|cat\s+<<[^ ]*)\s+//; s/^"//; s/"$//')
+    if [ -n "$WRITE_CONTENT" ] && [ ${#WRITE_CONTENT} -gt 5 ]; then
+      PII_RESPONSE=$(curl -s --max-time 5 -X POST "${ENDPOINT}/api/v1/mcp-server" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        "${AUTH_HEADER[@]}" \
+        -d "$(jq -n \
+          --arg ct "$CONNECTOR_TYPE" \
+          --arg msg "$WRITE_CONTENT" \
+          '{
+            jsonrpc: "2.0",
+            id: "hook-pii",
+            method: "tools/call",
+            params: {
+              name: "check_output",
+              arguments: {
+                connector_type: $ct,
+                message: $msg
+              }
+            }
+          }')" 2>/dev/null || echo "")
+      if [ -n "$PII_RESPONSE" ]; then
+        PII_RESULT=$(echo "$PII_RESPONSE" | jq -r '.result.content[0].text // empty' 2>/dev/null || echo "")
+        REDACTED=$(echo "$PII_RESULT" | jq -r '.redacted_message // empty' 2>/dev/null || echo "")
+        if [ -n "$REDACTED" ] && [ "$REDACTED" != "null" ] && [ "$REDACTED" != "$WRITE_CONTENT" ]; then
+          echo "AxonFlow: PII detected in file write content. Redacted: ${REDACTED}" >&2
+          exit 2
+        fi
+      fi
+    fi
+  fi
+fi
+
 # Allowed — exit 0
 exit 0
