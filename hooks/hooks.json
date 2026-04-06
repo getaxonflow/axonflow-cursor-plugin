@@ -4,7 +4,7 @@
     "preToolUse": [
       {
         "command": "./scripts/pre-tool-check.sh",
-        "matcher": "Shell|Write|Edit|Read",
+        "matcher": "Shell|Write|Edit|Read|Task|NotebookEdit|mcp__.*",
         "timeout": 10
       }
     ],
