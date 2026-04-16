@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0] - 2026-04-16
+
+### Added
+
+- **Anonymous telemetry ping** on first hook invocation. Sends plugin version, OS, architecture, bash version, and AxonFlow platform version to `checkpoint.getaxonflow.com`. No PII, no tool arguments, no policy data. Fires once per install (stamp file guard at `$HOME/.cache/axonflow/cursor-plugin-telemetry-sent`). Opt out with `DO_NOT_TRACK=1` or `AXONFLOW_TELEMETRY=off`.
+- **3 new governance skills:** `pii-scan`, `governance-status`, `policy-list` — brings Cursor to parity with Codex plugin's 6-skill advisory governance model.
+
+### Fixed
+
+- **UTF-8 safe content truncation.** Write and Edit content extraction now uses character-level `cut -c1-2000` instead of byte-level `head -c 2000`. Prevents splitting multi-byte UTF-8 sequences (emoji, accented characters) at the truncation boundary.
+- **Consistent curl error reporting.** `post-tool-audit.sh` now uses `-sS` (silent + show errors) matching `pre-tool-check.sh`.
+- **Removed unused `PII_ALLOWED` variable** from shell write PII scanning block — the `REDACTED` check is sufficient.
+- **Improved shell write content extraction regex.** Better handling of single-quoted strings and heredoc markers. Added documentation of known limitations.
+
+### Changed
+
+- **Hook timeout increased from 10s to 15s** across all 4 hook types (preToolUse, postToolUse, beforeShellExecution, afterFileEdit). Provides sufficient buffer above the 8s default curl timeout.
+
+### Security
+
+- Updated SECURITY.md timestamp to April 2026.
+
 ## [0.3.1] - 2026-04-10
 
 ### Added

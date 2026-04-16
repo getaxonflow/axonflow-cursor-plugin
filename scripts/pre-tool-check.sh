@@ -31,6 +31,10 @@ if [ -n "$AUTH" ]; then
   AUTH_HEADER=(-H "Authorization: Basic $AUTH")
 fi
 
+# Telemetry: fire-and-forget on first invocation (stamp file guard inside script)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+"${SCRIPT_DIR}/telemetry-ping.sh" </dev/null &
+
 # Read hook input from stdin
 INPUT=$(cat)
 
@@ -58,12 +62,12 @@ case "$TOOL_NAME" in
     ;;
   Write)
     FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty')
-    CONTENT=$(echo "$TOOL_INPUT" | jq -r '.content // empty' | head -c 2000)
+    CONTENT=$(echo "$TOOL_INPUT" | jq -r '.content // empty' | cut -c1-2000)
     STATEMENT="${FILE_PATH}"$'\n'"${CONTENT}"
     ;;
   Edit)
     FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty')
-    NEW_STRING=$(echo "$TOOL_INPUT" | jq -r '.new_string // empty' | head -c 2000)
+    NEW_STRING=$(echo "$TOOL_INPUT" | jq -r '.new_string // empty' | cut -c1-2000)
     STATEMENT="${FILE_PATH}"$'\n'"${NEW_STRING}"
     ;;
   NotebookEdit)
@@ -191,10 +195,13 @@ fi
 # the content for PII via check_output before allowing.
 if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
   if echo "$STATEMENT" | grep -qE '(>>?\s*\S|tee\s)'; then
-    # Extract the content being written (everything before the redirect)
+    # Extract content from shell write commands. Known limitations:
+    # - Does not handle variable interpolation ($VAR in strings)
+    # - Does not handle escaped quotes within strings
+    # - Does not handle multi-line heredocs (only first line captured)
+    # - Actual PII detection is server-side; this is best-effort extraction
     WRITE_CONTENT=$(echo "$STATEMENT" | sed -E 's/\s*[12]?>>\s*\S+.*//; s/\s*\|\s*tee\s.*//')
-    # Strip the command prefix (echo, printf, cat <<)
-    WRITE_CONTENT=$(echo "$WRITE_CONTENT" | sed -E 's/^(echo|printf|cat\s+<<[^ ]*)\s+//; s/^"//; s/"$//')
+    WRITE_CONTENT=$(echo "$WRITE_CONTENT" | sed -E "s/^(echo|printf|cat[[:space:]]+<<-?[[:space:]]*'?[A-Za-z_]+[^ ]*'?)[[:space:]]+//; s/^[\"']//; s/[\"']$//")
     if [ -n "$WRITE_CONTENT" ] && [ ${#WRITE_CONTENT} -gt 5 ]; then
       PII_RESPONSE=$(curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -X POST "${ENDPOINT}/api/v1/mcp-server" \
         -H "Content-Type: application/json" \
@@ -218,7 +225,6 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
       if [ -n "$PII_RESPONSE" ]; then
         PII_RESULT=$(echo "$PII_RESPONSE" | jq -r '.result.content[0].text // empty' 2>/dev/null || echo "")
         REDACTED=$(echo "$PII_RESULT" | jq -r '.redacted_message // empty' 2>/dev/null || echo "")
-        PII_ALLOWED=$(echo "$PII_RESULT" | jq -r 'if .allowed == false then "false" else "true" end' 2>/dev/null || echo "true")
         if [ -n "$REDACTED" ] && [ "$REDACTED" != "null" ] && [ "$REDACTED" != "$WRITE_CONTENT" ]; then
           # Respect PII_ACTION: block (default) | warn | log | redact
           PII_ACTION="${PII_ACTION:-redact}"
