@@ -43,7 +43,7 @@ Go to Settings (Cmd+Shift+J) → Plugins. You should see:
 
 - **Axonflow Cursor Plugin** (Local)
 - MCPs: 1 (Axonflow)
-- Skills: 3 (audit-search, check-governance, policy-stats)
+- Skills: 6 (audit-search, check-governance, governance-status, pii-scan, policy-list, policy-stats)
 - Rules: 1 (axonflow-governance)
 
 ---
@@ -158,6 +158,29 @@ Go to Settings (Cmd+Shift+J) → Plugins. You should see:
   "agent_message": "Message sent to agent when denied"
 }
 ```
+
+---
+
+## 5. Telemetry Verification
+
+### 5.1 First-invocation telemetry ping
+1. Delete stamp file: `rm -f ~/.cache/axonflow/cursor-plugin-telemetry-sent`
+2. Run any governed tool (e.g., shell command via Cursor)
+3. Verify stamp file created: `ls -la ~/.cache/axonflow/cursor-plugin-telemetry-sent`
+4. Verify stamp file contains a UUID: `cat ~/.cache/axonflow/cursor-plugin-telemetry-sent`
+
+### 5.2 Subsequent invocations skip telemetry
+1. With stamp file present, run another governed tool
+2. No new HTTP request to checkpoint (verify via network monitor or AxonFlow logs)
+
+### 5.3 Opt-out verification (DO_NOT_TRACK)
+1. Delete stamp file
+2. Set `export DO_NOT_TRACK=1`
+3. Run a governed tool
+4. Verify NO stamp file created
+
+### 5.4 Opt-out verification (AXONFLOW_TELEMETRY)
+1. Same as 5.3 but with `export AXONFLOW_TELEMETRY=off`
 
 ---
 

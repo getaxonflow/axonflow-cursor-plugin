@@ -5,23 +5,25 @@
       {
         "command": "./scripts/pre-tool-check.sh",
         "matcher": "Shell|Write|Edit|Read|Task|NotebookEdit|mcp__.*",
-        "timeout": 10
+        "timeout": 15
       }
     ],
     "postToolUse": [
       {
-        "command": "./scripts/post-tool-audit.sh"
+        "command": "./scripts/post-tool-audit.sh",
+        "timeout": 15
       }
     ],
     "beforeShellExecution": [
       {
         "command": "./scripts/pre-tool-check.sh",
-        "timeout": 10
+        "timeout": 15
       }
     ],
     "afterFileEdit": [
       {
-        "command": "./scripts/post-tool-audit.sh"
+        "command": "./scripts/post-tool-audit.sh",
+        "timeout": 15
       }
     ]
   }
