@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0] - 2026-04-17 — Plugin Batch 1: Richer Approval Context
+## [0.5.0] - 2026-04-18
 
 ### Added
 
@@ -12,13 +12,12 @@
   prior v0.4.0 message — fields are omitted when not returned.
 - **Access to platform MCP tools** `explain_decision`, `create_override`,
   `delete_override`, `list_overrides` — available via the agent's MCP
-  server when connected to a v7.1.0+ platform. No plugin change required
-  to surface them; Cursor's MCP client can invoke directly.
+  server when connected to a v7.1.0+ platform. Cursor's MCP client can
+  invoke them directly.
 
 ### Compatibility
 
-Companion to platform v7.1.0 (ADR-042 + ADR-043) and SDKs v5.4.0 /
-v6.4.0. Back-compatible.
+Companion to platform v7.1.0 and SDKs v5.4.0 / v6.4.0. Back-compatible.
 
 ## [0.4.0] - 2026-04-16
 
