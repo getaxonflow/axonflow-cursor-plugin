@@ -241,12 +241,14 @@ axonflow-cursor-plugin/
 ├── rules/
 │   └── axonflow-governance.mdc  # Always-on governance context
 ├── scripts/
-│   ├── pre-tool-check.sh   # Policy evaluation (PreToolUse)
-│   ├── post-tool-audit.sh  # Audit + PII scan (PostToolUse)
-│   └── telemetry-ping.sh   # Anonymous telemetry (fires once per install)
+│   ├── pre-tool-check.sh    # Policy evaluation (PreToolUse)
+│   ├── post-tool-audit.sh   # Audit + PII scan (PostToolUse)
+│   ├── mcp-auth-headers.sh  # Basic-auth header generation for MCP
+│   └── telemetry-ping.sh    # Anonymous telemetry (fires once per install)
 └── tests/
-    ├── test-hooks.sh       # Regression tests (mock + live)
-    └── e2e/                # Smoke E2E against live AxonFlow
+    ├── test-hooks.sh        # Regression tests (mock + live)
+    ├── E2E_TESTING_PLAYBOOK.md
+    └── e2e/                 # Smoke E2E against live AxonFlow
 ```
 
 ---
