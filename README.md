@@ -6,7 +6,7 @@
 
 > **→ Full integration walkthrough:** **[docs.getaxonflow.com/docs/integration/cursor](https://docs.getaxonflow.com/docs/integration/cursor/)** — architecture, policy examples, latency numbers, troubleshooting, and the 10 MCP tools the platform exposes.
 
-> **Upgrade strongly recommended.** Over the past month we've shipped substantial production, quality, and security hardening across the AxonFlow plugin and platform — see the [v0.6.0 release notes](./CHANGELOG.md), the per-plugin advisory [`GHSA-qc7h-rq59-m293`](https://github.com/getaxonflow/axonflow-cursor-plugin/security/advisories/GHSA-qc7h-rq59-m293), and the consolidated platform advisory [`GHSA-9h64-2846-7x7f`](https://github.com/getaxonflow/axonflow/security/advisories/GHSA-9h64-2846-7x7f). Upgrade to the latest version for a more secure, reliable, and bug-free experience.
+> **Upgrade strongly recommended.** AxonFlow ships substantial monthly security and quality hardening; staying on the latest major is the security-supported release line. [Latest release](https://github.com/getaxonflow/axonflow-cursor-plugin/releases/latest) · [Security advisories](https://github.com/getaxonflow/axonflow-cursor-plugin/security/advisories)
 
 ---
 
