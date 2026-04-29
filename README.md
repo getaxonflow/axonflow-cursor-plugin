@@ -6,6 +6,8 @@
 
 > **→ Full integration walkthrough:** **[docs.getaxonflow.com/docs/integration/cursor](https://docs.getaxonflow.com/docs/integration/cursor/)** — architecture, policy examples, latency numbers, troubleshooting, and the 10 MCP tools the platform exposes.
 
+> **Upgrade strongly recommended.** AxonFlow ships substantial monthly security and quality hardening; staying on the latest major is the security-supported release line. [Latest release](https://github.com/getaxonflow/axonflow-cursor-plugin/releases/latest) · [Security advisories](https://github.com/getaxonflow/axonflow-cursor-plugin/security/advisories)
+
 ---
 
 ## Why you'd add this
