@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # PostToolUse hook — audit logging and output scanning.
-# Matches the OpenClaw plugin's after_tool_call + message_sending hooks.
+# Adapted for Cursor IDE from the Claude Code plugin.
 #
 # 1. Records tool execution in AxonFlow audit trail (fire-and-forget, background)
-# 2. Scans tool output for PII/secrets (synchronous — needs to return context to Claude)
+# 2. Scans tool output for PII/secrets (synchronous — returns context to Cursor)
 #
 # This script is best-effort: failures never block tool execution.
-# No set -e — individual command failures are handled gracefully.
+# Cursor PostToolUse always exits 0 — never blocks.
 
 # Fail-open: if jq/curl not available, exit silently
 if ! command -v jq &>/dev/null || ! command -v curl &>/dev/null; then
@@ -45,14 +45,21 @@ INPUT=$(cat)
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || echo "")
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}' 2>/dev/null || echo "{}")
-TOOL_RESPONSE=$(echo "$INPUT" | jq -c '.tool_response // {}' 2>/dev/null || echo "{}")
+TOOL_RESPONSE=$(echo "$INPUT" | jq -c '.tool_response // .tool_output // {}' 2>/dev/null || echo "{}")
 
-# Skip if no tool name
+# Handle afterShellExecution format (no tool_name, has command+output directly)
 if [ -z "$TOOL_NAME" ]; then
-  exit 0
+  DIRECT_COMMAND=$(echo "$INPUT" | jq -r '.command // empty' 2>/dev/null || echo "")
+  if [ -n "$DIRECT_COMMAND" ]; then
+    TOOL_NAME="Shell"
+    TOOL_INPUT=$(echo "$INPUT" | jq -c '{command: .command}' 2>/dev/null || echo "{}")
+    TOOL_RESPONSE=$(echo "$INPUT" | jq -c '{stdout: .output, exitCode: 0}' 2>/dev/null || echo "{}")
+  else
+    exit 0
+  fi
 fi
 
-CONNECTOR_TYPE="claude_code.${TOOL_NAME}"
+CONNECTOR_TYPE="cursor.${TOOL_NAME}"
 
 # Determine success from tool response
 SUCCESS=$(echo "$TOOL_RESPONSE" | jq 'if .exitCode != null then (.exitCode == 0) elif .success != null then .success else true end' 2>/dev/null || echo "true")
@@ -81,7 +88,7 @@ TRUNCATED_OUTPUT=$(echo "$TOOL_RESPONSE" | jq -c '.' 2>/dev/null | cut -c1-500 |
           name: "audit_tool_call",
           arguments: {
             tool_name: $tn,
-            tool_type: "claude_code",
+            tool_type: "cursor",
             input: ($ti | fromjson? // {}),
             output: {summary: $out},
             success: $success,
@@ -91,10 +98,10 @@ TRUNCATED_OUTPUT=$(echo "$TOOL_RESPONSE" | jq -c '.' 2>/dev/null | cut -c1-500 |
       }')" > /dev/null 2>&1
 ) &
 
-# 2. Scan tool output for PII/secrets (synchronous — returns context to Claude if PII found)
+# 2. Scan tool output for PII/secrets (synchronous — returns context if PII found)
 OUTPUT_TEXT=""
 case "$TOOL_NAME" in
-  Bash)
+  Bash|Shell)
     OUTPUT_TEXT=$(echo "$TOOL_RESPONSE" | jq -r '.stdout // empty' 2>/dev/null || echo "")
     # If stdout is empty but command contains a redirect (echo ... > file),
     # scan the command itself — the PII is in the input, not the output.
@@ -140,18 +147,15 @@ if [ -n "$OUTPUT_TEXT" ] && [ "$OUTPUT_TEXT" != "null" ]; then
         }
       }')" 2>/dev/null || echo "")
 
-  # If PII was found, add context for Claude
+  # If PII was found, add context
   if [ -n "$SCAN_RESPONSE" ]; then
     SCAN_RESULT=$(echo "$SCAN_RESPONSE" | jq -r '.result.content[0].text // empty' 2>/dev/null || echo "")
     if [ -n "$SCAN_RESULT" ]; then
       REDACTED=$(echo "$SCAN_RESULT" | jq -r '.redacted_message // empty' 2>/dev/null || echo "")
       POLICIES_FOUND=$(echo "$SCAN_RESULT" | jq -r '.policies_evaluated // 0' 2>/dev/null || echo "0")
-      ALLOWED=$(echo "$SCAN_RESULT" | jq -r '.allowed // true' 2>/dev/null || echo "true")
+      ALLOWED=$(echo "$SCAN_RESULT" | jq -r 'if .allowed == false then "false" else "true" end' 2>/dev/null || echo "true")
 
       if [ -n "$REDACTED" ] && [ "$REDACTED" != "null" ]; then
-        # PII detected in tool output. PostToolUse hooks cannot transform
-        # the original output — we can only instruct Claude not to expose
-        # the raw PII in its response to the user.
         jq -n \
           --arg redacted "$REDACTED" \
           --arg policies "$POLICIES_FOUND" \
@@ -163,7 +167,6 @@ if [ -n "$OUTPUT_TEXT" ] && [ "$OUTPUT_TEXT" != "null" ]; then
           }'
         exit 0
       elif [ "$ALLOWED" = "false" ]; then
-        # Output blocked by policy (not just PII redaction)
         BLOCK_REASON=$(echo "$SCAN_RESULT" | jq -r '.block_reason // "Policy violation in tool output"' 2>/dev/null || echo "")
         jq -n \
           --arg reason "$BLOCK_REASON" \
