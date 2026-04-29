@@ -143,9 +143,17 @@ cp -r axonflow-cursor-plugin ~/.cursor/plugins/local/axonflow-cursor-plugin
 
 Symlinks don't work — Cursor requires a real copy.
 
-### Start AxonFlow
+### Connect to AxonFlow
 
-The plugin connects to AxonFlow, a self-hosted governance platform. **No LLM provider keys are required** — Cursor handles every LLM call; AxonFlow only evaluates policies and records audit trails.
+The plugin works with no configuration. On first run it connects to AxonFlow Community SaaS at `https://try.getaxonflow.com`, registers a tenant, and persists the credential to `~/.config/axonflow/try-registration.json` (mode 0600). Every hook invocation logs a one-line canary on stderr:
+
+```
+[AxonFlow] Connected to AxonFlow at https://try.getaxonflow.com (mode=community-saas)
+```
+
+Community SaaS is intended for basic testing and evaluation. **No LLM provider keys are required** — Cursor handles every LLM call; AxonFlow only evaluates policies and records audit trails.
+
+For real workflows, real systems, or sensitive data, run AxonFlow yourself:
 
 ```bash
 git clone https://github.com/getaxonflow/axonflow.git
@@ -161,15 +169,20 @@ See [Getting Started](https://docs.getaxonflow.com/docs/getting-started/) for pr
 
 ## Configure
 
+The plugin defaults to AxonFlow Community SaaS — no environment variables required. Setting any of `AXONFLOW_ENDPOINT` or `AXONFLOW_AUTH` opts you into self-hosted mode and the plugin uses your values verbatim.
+
 ```bash
+# Self-hosted (any single env var is enough to opt in):
 export AXONFLOW_ENDPOINT=http://localhost:8080
-export AXONFLOW_AUTH=""                # empty for community mode
-export AXONFLOW_TIMEOUT_SECONDS=12     # optional: remote/VPN deployments
+
+# Optional: longer request timeout for remote / VPN deployments
+export AXONFLOW_TIMEOUT_SECONDS=12
 ```
 
-In community mode (`DEPLOYMENT_MODE=community`), no auth is needed. For enterprise credentials:
+For evaluation or enterprise credentials, set both endpoint and auth:
 
 ```bash
+export AXONFLOW_ENDPOINT=https://your-axonflow.example.com
 export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
 ```
 
@@ -319,7 +332,7 @@ More troubleshooting in the [integration guide](https://docs.getaxonflow.com/doc
 
 ## Telemetry
 
-Anonymous one-time ping on first hook invocation: plugin version, OS, architecture, bash version, AxonFlow platform version. **Never** tool arguments, message contents, or policy data.
+Anonymous heartbeat at most once every 7 days per machine: plugin version, OS, architecture, bash version, AxonFlow platform version, deployment mode (community-saas / self-hosted production / self-hosted development). **Never** tool arguments, message contents, or policy data. The stamp file mtime advances only after the HTTP POST returns 2xx, so a transient network failure does not silence telemetry until the next window.
 
 Opt out: set `AXONFLOW_TELEMETRY=off` in the environment Cursor runs in.
 
