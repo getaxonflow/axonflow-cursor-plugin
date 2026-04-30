@@ -163,7 +163,7 @@ The plugin works with no configuration. On first run it connects to **AxonFlow C
 | Outbound message bodies before delivery (PII/secret scan) | Cursor conversation history outside governed tools |
 | Anonymous 7-day heartbeat (plugin version, OS, runtime) | Files outside the Cursor runtime |
 
-Community SaaS is intended for evaluation and prototyping. It has no SLA, runs against shared Ollama models, and rate-limits per tenant. Read the [Try AxonFlow — Free Trial Server](https://docs.getaxonflow.com/docs/deployment/community-saas/) page for the full disclosure, including data retention and registration mechanics.
+Community SaaS is intended for evaluation and prototyping. It has no SLA, no production guarantees, runs against shared Ollama models, and rate-limits at 20 req/min · 500 req/day per tenant. Read the [Try AxonFlow — Free Trial Server](https://docs.getaxonflow.com/docs/deployment/community-saas/) page for the full disclosure, including [data retention](https://docs.getaxonflow.com/docs/deployment/community-saas/#limitations-and-disclaimers) and [registration mechanics](https://docs.getaxonflow.com/docs/deployment/community-saas/#registration).
 
 ### Self-hosted: your own AxonFlow
 
