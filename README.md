@@ -351,7 +351,7 @@ axonflow-cursor-plugin/
 ├── rules/
 │   └── axonflow-governance.mdc  # Always-on governance context
 ├── scripts/
-│   ├── pre-tool-check.sh    # Policy evaluation (PreToolUse)
+│   ├── pre-tool-check.sh    # Policy enforcement (PreToolUse)
 │   ├── post-tool-audit.sh   # Audit + PII scan (PostToolUse)
 │   ├── mcp-auth-headers.sh  # Basic-auth header generation for MCP
 │   └── telemetry-ping.sh    # Anonymous telemetry (fires once per install)
