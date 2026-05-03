@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-03 — 4 read-side governance skills
+
 ### Added
 
 - **4 new agent-callable governance skills.** Cursor agents can now use the
