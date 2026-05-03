@@ -1,0 +1,13 @@
+# revoke-override — runtime E2E
+
+**Asserts (gate):** Cursor IDE present, AxonFlow stack reachable, MCP server advertises `delete_override`, plugin's `mcp.json` well-formed, AND `EVIDENCE.md` from a recent (≤60 day) human-driven `MANUAL_RUNBOOK.md` run is checked in. Cursor's CLI is window-management only, so the runtime-path proof is human-driven; this gate refuses to pass without recent evidence.
+
+**Prereqs:** Cursor IDE installed; `jq`; live AxonFlow stack reachable at `$AXONFLOW_ENDPOINT` (default `http://localhost:8080`).
+
+**Run:**
+```bash
+AXONFLOW_ENDPOINT=http://localhost:8080 \
+  bash runtime-e2e/revoke-override/test.sh
+```
+
+To produce `EVIDENCE.md`: follow `MANUAL_RUNBOOK.md` in this folder.
