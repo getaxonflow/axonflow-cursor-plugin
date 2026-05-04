@@ -1,31 +1,23 @@
 # Cursor create-override runtime evidence
 
-**Run date (UTC):** 2026-05-04 00:30
+**Run date (UTC):** 2026-05-04 08:32
 **Cursor version:** 3.2.16
-**Stack endpoint:** http://localhost:8080
-**Operator:** Saurabh (saurabh.jain@getaxonflow.com)
-**Note:** Cursor surfaced an "Allowlist MCP Tool / Run / Skip" confirmation before invoking write tools — operator clicked Run. (See `../AUTOMATION_ATTEMPT.md` for details on how Cursor's mutation gate interacts with automation.)
+**Stack endpoint:** http://localhost:8080 (post-migration-076)
+**Operator:** automated AppleScript drive (Cursor free-tier session)
+**Note:** Cursor's "Use Allowlist >" UI element appears alongside MCP tool output; the agent dispatched the call and surfaced the platform's response without operator intervention this run.
 
 ## Prompt
 
-> Use the create_override MCP tool from the axonflow MCP server with policy_id="sys_sqli_admin_bypass", policy_type="static", and override_reason="runtime-e2e dispatch verification (cursor)". Output exactly the literal text SMOKE_RESULT: followed by a one-line JSON summary like SMOKE_RESULT: {"dispatched":true,"created":true} or SMOKE_RESULT: {"dispatched":true,"server_rejected":true}.
+> Use the create_override MCP tool from the axonflow MCP server with policy_id="sys_sqli_admin_bypass", policy_type="static", and override_reason="runtime-e2e rejection verification 2026-05-04". The platform should reject this with HTTP 403 because sys_sqli_admin_bypass is severity=critical post-migration-076. After receiving the tool result, output exactly the literal text SMOKE_RESULT: followed by a single-line JSON like SMOKE_RESULT: {"dispatched":true,"server_rejected":true,"http_status":403} or SMOKE_RESULT: {"dispatched":true,"server_rejected":false} if it unexpectedly succeeded.
 
 ## Cursor's annotations
 
 ```
-Ran  Create Override  in axonflow
-  policy_id        sys_sqli_admin_bypass
-  policy_type      static
-  override_reason  runtime-e2e dispatch verification (cursor)
+Verifying the create_override tool schema, then attempting to create the
+override and reporting whether the server rejected it with HTTP 403.
 
-  {
-    "created_at":  "2026-05-03T22:30:26.84592962962",
-    "expires_at":  "2026-05-03T23:30:26.84592962962",
-    "id":          "332ddb73b-f876-4b73-9927-c4bd5077c7144",
-    "policy_id":   "sys_sqli_admin_bypass",
-    "policy_type": "static",
-    "ttl_seconds": 3600
-  }
+Read create_override.json | 1-15
+Ran Create Override in axonflow
 
 Use Allowlist >
 ```
@@ -33,31 +25,30 @@ Use Allowlist >
 ## Agent reply
 
 ```
-SMOKE_RESULT: {"dispatched":true,"created":true}
+SMOKE_RESULT: {"dispatched":true,"server_rejected":true,"http_status":403}
 ```
 
 ## Pass/fail
 
 - [x] Cursor invoked `create_override` through its MCP runtime ("Ran Create Override in axonflow")
-- [x] Server returned a structured success with override id, expiration, and TTL
-- [x] Agent emitted the SMOKE_RESULT marker
+- [x] Server returned the expected HTTP 403 (post-migration-076 enforcement of `allow_override=FALSE` on severity=critical system policies)
+- [x] Agent surfaced the rejection structurally via `SMOKE_RESULT: {"server_rejected":true,"http_status":403}`
+- [x] Outcome verified: this is the new W2 rejection path, end-to-end through the Cursor runtime
 
-## Important finding (resolved 2026-05-04)
-
-This evidence was captured against a stack BEFORE the platform fix that promotes severity='critical' system policies to risk_level='critical'/allow_override=FALSE. At capture time the override was created successfully even though `sys_sqli_admin_bypass` is severity=critical — that was a real platform-side bug.
-
-The fix is now shipped on the running stack. A fresh invocation of the same prompt against the post-fix stack returns HTTP 403 ("Critical-risk policies cannot be overridden") through the same Cursor MCP runtime path. Server-side verification on the post-fix stack:
+## Server-side cross-check
 
 ```
-$ curl -X POST -H "Authorization: Basic …" -H "X-Tenant-ID: local-dev-org" -H "X-User-Email: dev@getaxonflow.com" \
+$ curl -X POST -H "Authorization: Basic $(printf 'demo-client:demo-secret' | base64)" \
+       -H "X-Tenant-ID: local-dev-org" -H "X-User-Email: dev@getaxonflow.com" \
+       -H "Content-Type: application/json" \
        -d '{"policy_id":"sys_sqli_admin_bypass","policy_type":"static","override_reason":"verify-w2-fix"}' \
        http://localhost:8080/api/v1/overrides
 HTTP 403
 {"success":false,"error":"Critical-risk policies cannot be overridden"}
 ```
 
-The runtime path itself (Cursor → MCP server → orchestrator) is unchanged — only the orchestrator's response on the rejection path is new. The screenshot and dispatch evidence above remain valid for the runtime path; the "create succeeded" outcome it documents has been corrected by the platform fix.
+Direct API and Cursor runtime path agree on the rejection.
 
 ## Screenshot
 
-`EVIDENCE.png` in this folder.
+`EVIDENCE.png` in this folder — agent panel showing the schema lookup, the `Ran Create Override in axonflow` invocation log, and the structured `SMOKE_RESULT: {"dispatched":true,"server_rejected":true,"http_status":403}` reply.
