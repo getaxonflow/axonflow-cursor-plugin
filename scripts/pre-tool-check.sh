@@ -41,11 +41,45 @@ AUTH="${AXONFLOW_AUTH:-}"
 REQUEST_TIMEOUT_SECONDS="${AXONFLOW_TIMEOUT_SECONDS:-8}"
 export AXONFLOW_MODE
 
+# Plugin-claimed Pro license token (W4 paid tier, ADR-049). The token is an
+# AXON-prefixed signed JWT that the agent's PluginClaimMiddleware validates
+# on every request. When present, the request joins the Pro tier; when
+# absent, the request stays on the free / community tier.
+#
+# Resolution order is env first, plugin config second so a user can drop
+# AXONFLOW_LICENSE_TOKEN into their shell profile without editing config
+# files, but still persist the token to ~/.config/axonflow/license-token
+# from the recovery / paste flow without re-exporting it every session.
+LICENSE_TOKEN="${AXONFLOW_LICENSE_TOKEN:-}"
+LICENSE_TOKEN_FILE="${HOME}/.config/axonflow/license-token"
+if [ -z "$LICENSE_TOKEN" ] && [ -f "$LICENSE_TOKEN_FILE" ]; then
+  # Same 0600 permission gate the recovery / try-registration loaders use:
+  # refuse to read a credential file with loose permissions rather than
+  # silently leak the token to other UIDs sharing the host.
+  TOK_MODE=$(stat -c %a "$LICENSE_TOKEN_FILE" 2>/dev/null) || TOK_MODE=""
+  case "$TOK_MODE" in
+    ''|*[!0-9]*) TOK_MODE=$(stat -f %Lp "$LICENSE_TOKEN_FILE" 2>/dev/null) || TOK_MODE="" ;;
+  esac
+  case "$TOK_MODE" in
+    ''|*[!0-9]*) TOK_MODE="" ;;
+  esac
+  if [ "$TOK_MODE" = "600" ] || [ "$TOK_MODE" = "0600" ]; then
+    LICENSE_TOKEN=$(tr -d '\r\n' < "$LICENSE_TOKEN_FILE" 2>/dev/null || echo "")
+  else
+    echo "[AxonFlow] $LICENSE_TOKEN_FILE has unsafe permissions ($TOK_MODE); refusing to read. Re-run scripts/recover-credentials.sh or chmod 0600 the file." >&2
+  fi
+fi
+
 # Mode-clarity canary on stderr (NEVER stdout — stdout is the hook protocol).
 # CI's mode-clarity gate parses this line and asserts it matches the actual
 # outbound destination. Users can never be misled about which AxonFlow they're
-# talking to.
-echo "[AxonFlow] Connected to AxonFlow at ${ENDPOINT} (mode=${AXONFLOW_MODE})" >&2
+# talking to. The "Pro tier active" suffix joins the canary when a license
+# token is present so users see in their terminal that the paid tier is live.
+TIER_SUFFIX=""
+if [ -n "$LICENSE_TOKEN" ]; then
+  TIER_SUFFIX=" — Pro tier active"
+fi
+echo "[AxonFlow] Connected to AxonFlow at ${ENDPOINT} (mode=${AXONFLOW_MODE})${TIER_SUFFIX}" >&2
 
 # Community-SaaS bootstrap: register with try.getaxonflow.com on first run and
 # load the resulting Basic-auth credential into AXONFLOW_AUTH. No-op when the
@@ -54,10 +88,16 @@ echo "[AxonFlow] Connected to AxonFlow at ${ENDPOINT} (mode=${AXONFLOW_MODE})" >
 . "${SCRIPT_DIR}/community-saas-bootstrap.sh"
 AUTH="${AXONFLOW_AUTH:-}"
 
-# Build auth header array safely (avoids word-splitting)
+# Build header array safely (avoids word-splitting). The license-token header
+# is appended whenever LICENSE_TOKEN is set; the platform middleware treats
+# absence as free tier rather than rejecting, so a missing token is safe to
+# omit entirely.
 AUTH_HEADER=()
 if [ -n "$AUTH" ]; then
-  AUTH_HEADER=(-H "Authorization: Basic $AUTH")
+  AUTH_HEADER+=(-H "Authorization: Basic $AUTH")
+fi
+if [ -n "$LICENSE_TOKEN" ]; then
+  AUTH_HEADER+=(-H "X-License-Token: $LICENSE_TOKEN")
 fi
 
 # One-time positive disclosure when first connecting to Community SaaS. Stamp

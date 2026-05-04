@@ -16,7 +16,13 @@ POST_HOOK="$PLUGIN_DIR/scripts/post-tool-audit.sh"
 PASS=0
 FAIL=0
 MOCK_PID=""
-MOCK_PORT=18199
+# Random port in the IANA private range so a stale mock from a sibling plugin
+# repo (axonflow-claude-code-plugin, axonflow-codex-plugin, …) on the old
+# hard-coded 18199 doesn't cross-pollute this run's telemetry capture file.
+# That class of cross-plugin pollution previously surfaced as flaky
+# `sdk is cursor-plugin (got 'codex-plugin')` failures whenever two plugin
+# test runs overlapped on the same host.
+MOCK_PORT=$(( (RANDOM % 10000) + 40000 ))
 
 # --- Test Helpers ---
 
@@ -620,12 +626,13 @@ PII_ALLOWED_COUNT=$(grep -c 'PII_ALLOWED' "$PLUGIN_DIR/scripts/pre-tool-check.sh
 assert_eq "No PII_ALLOWED references" "0" "$PII_ALLOWED_COUNT"
 
 echo ""
-echo "--- Static: skills directory has 10 skills ---"
+echo "--- Static: skills directory has 11 skills ---"
 # 6 original (audit-search, check-governance, governance-status, pii-scan,
 # policy-list, policy-stats) + 4 W2 read-side governance skills
-# (explain-decision, list-overrides, create-override, revoke-override).
+# (explain-decision, list-overrides, create-override, revoke-override) +
+# 1 W4 v1-paid-tier skill (recover-credentials).
 SKILL_COUNT=$(find "$PLUGIN_DIR/skills" -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-assert_eq "10 skills present" "10" "$SKILL_COUNT"
+assert_eq "11 skills present" "11" "$SKILL_COUNT"
 
 echo ""
 echo "--- Static: shell write regex handles single quotes ---"

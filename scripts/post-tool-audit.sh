@@ -35,9 +35,33 @@ REQUEST_TIMEOUT_SECONDS="${AXONFLOW_TIMEOUT_SECONDS:-5}"
 . "${SCRIPT_DIR}/community-saas-bootstrap.sh"
 AUTH="${AXONFLOW_AUTH:-}"
 
+# Plugin-claimed Pro license token (W4 paid tier, ADR-049). Same env-then-file
+# resolution as pre-tool-check.sh so audit writes carry the same tier context
+# as the policy check that preceded them. Without this, the agent would tag
+# audit rows from a Pro user with the free-tier retention/quota.
+LICENSE_TOKEN="${AXONFLOW_LICENSE_TOKEN:-}"
+LICENSE_TOKEN_FILE="${HOME}/.config/axonflow/license-token"
+if [ -z "$LICENSE_TOKEN" ] && [ -f "$LICENSE_TOKEN_FILE" ]; then
+  TOK_MODE=$(stat -c %a "$LICENSE_TOKEN_FILE" 2>/dev/null) || TOK_MODE=""
+  case "$TOK_MODE" in
+    ''|*[!0-9]*) TOK_MODE=$(stat -f %Lp "$LICENSE_TOKEN_FILE" 2>/dev/null) || TOK_MODE="" ;;
+  esac
+  case "$TOK_MODE" in
+    ''|*[!0-9]*) TOK_MODE="" ;;
+  esac
+  if [ "$TOK_MODE" = "600" ] || [ "$TOK_MODE" = "0600" ]; then
+    LICENSE_TOKEN=$(tr -d '\r\n' < "$LICENSE_TOKEN_FILE" 2>/dev/null || echo "")
+  fi
+  # Permission warning is intentionally only emitted by pre-tool-check.sh —
+  # post-tool-audit.sh runs once per tool call and we don't want to spam.
+fi
+
 AUTH_HEADER=()
 if [ -n "$AUTH" ]; then
-  AUTH_HEADER=(-H "Authorization: Basic $AUTH")
+  AUTH_HEADER+=(-H "Authorization: Basic $AUTH")
+fi
+if [ -n "$LICENSE_TOKEN" ]; then
+  AUTH_HEADER+=(-H "X-License-Token: $LICENSE_TOKEN")
 fi
 
 # Read hook input from stdin
