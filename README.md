@@ -264,6 +264,44 @@ When a token is loaded, the mode-clarity canary appends a `Pro tier active` suff
 
 The free / community tier behaviour is unchanged when no token is set — the plugin sends no `X-License-Token` header and the agent treats the request as free-tier.
 
+### Check status (`scripts/status.sh`)
+
+Need your `tenant_id` (to paste into the Stripe Checkout custom field at `https://getaxonflow.com/pro`)? Want to confirm whether your Pro license token is loaded? Run:
+
+```bash
+cd ~/.cursor/plugins/local/axonflow-cursor-plugin
+bash scripts/status.sh
+```
+
+Sample output (free tier):
+
+```
+AxonFlow Cursor plugin — status
+
+  endpoint           https://try.getaxonflow.com
+  mode               community-saas
+  tenant_id:         cs_a1b2c3d4-...
+  registration file  /home/you/.config/axonflow/try-registration.json
+  license token      unset
+  tier               Free
+  upgrade            https://getaxonflow.com/pro
+
+To upgrade to Pro, copy your tenant_id above, visit
+https://getaxonflow.com/pro, paste the tenant_id into the "Your AxonFlow tenant ID"
+field, and complete checkout. ...
+```
+
+Sample output (Pro tier):
+
+```
+  license token      set (AXON-...wxyz, source=env)
+  tier               Pro
+```
+
+The license token is **always** redacted to its last 4 chars. The full token is never printed — output is safe to screen-share or paste into a support ticket.
+
+In the chat, use the `/axonflow-status` skill to have the agent run this for you and surface the `tenant_id` and tier.
+
 ### Recovering lost credentials (`scripts/recover-credentials.sh`)
 
 If you lose your `~/.config/axonflow/try-registration.json` (deleted by mistake, switched machines, hit the unsafe-permissions guard, etc.), run the recovery helper from the plugin install directory:
@@ -331,7 +369,7 @@ See [Session Overrides](https://docs.getaxonflow.com/docs/governance/overrides/)
 
 The plugin ships skills (invocable explicitly) and `.mdc` rules (always-on context):
 
-**Skills:** `check-governance`, `audit-search`, `policy-stats`, `pii-scan`, `governance-status`, `policy-list`
+**Skills:** `check-governance`, `audit-search`, `policy-stats`, `pii-scan`, `governance-status`, `policy-list`, `axonflow-status`
 
 **Rules:** `axonflow-governance.mdc` — injected into every conversation so Cursor knows governance is active and how to react when tools are blocked or PII is detected.
 

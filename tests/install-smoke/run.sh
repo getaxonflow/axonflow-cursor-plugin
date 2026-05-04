@@ -60,11 +60,74 @@ chmod +x "$STAGE_DIR/scripts/"*.sh
 for f in .cursor-plugin/plugin.json mcp.json hooks/hooks.json \
          scripts/pre-tool-check.sh scripts/post-tool-audit.sh \
          scripts/telemetry-ping.sh scripts/mcp-auth-headers.sh \
-         scripts/recover-credentials.sh; do
+         scripts/recover-credentials.sh scripts/status.sh; do
   if [ -f "$STAGE_DIR/$f" ]; then pass "staged $f"
   else fail "missing $f after stage"
   fi
 done
+
+# 2b. Status-script smoke. Drives status.sh against an isolated $HOME so it
+# never touches the developer's real ~/.config/axonflow. Asserts:
+#   - tenant_id from try-registration.json renders into output
+#   - "tier Free" when no AXONFLOW_LICENSE_TOKEN env is set
+#   - "tier Pro" + last-4 redaction when token is set
+#   - the FULL token never appears in stdout (the codex#41 regression)
+#   - recovery hint surfaces when the registration file is missing
+STATUS_HOME=$(mktemp -d 2>/dev/null || mktemp -d -t status-home)
+mkdir -p "$STATUS_HOME/.config/axonflow"
+chmod 0700 "$STATUS_HOME/.config/axonflow"
+cat > "$STATUS_HOME/.config/axonflow/try-registration.json" <<'EOJ'
+{"tenant_id":"cs_smoke-tenant-xyz","secret":"REDACTED","endpoint":"https://try.getaxonflow.com","email":"smoke@example.com"}
+EOJ
+chmod 0600 "$STATUS_HOME/.config/axonflow/try-registration.json"
+
+# Free-tier path: no env token, expect "Free" + tenant_id surfaced.
+FREE_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off bash "$STAGE_DIR/scripts/status.sh" 2>&1)
+if echo "$FREE_OUT" | grep -q "tenant_id:[[:space:]]*cs_smoke-tenant-xyz"; then
+  pass "status.sh surfaces tenant_id from try-registration.json"
+else
+  fail "status.sh missing tenant_id; output: $FREE_OUT"
+fi
+if echo "$FREE_OUT" | grep -qE "tier[[:space:]]+Free"; then
+  pass "status.sh reports Free tier when no token configured"
+else
+  fail "status.sh did not report Free tier; output: $FREE_OUT"
+fi
+
+# Pro-tier path: set env token with a known last-4. The full token is a
+# bearer credential and MUST NOT appear in stdout — only the last 4 chars
+# inside an `AXON-...XXXX` redaction. Mirrors the axonflow-codex-plugin#41
+# fix where cmd_status leaked the entire token.
+SECRET_TOKEN_FULL="AXON-eyJsupersecretjwtbodynevershow-tail9999"
+SECRET_TOKEN_MIDDLE="supersecretjwtbody"
+PRO_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off \
+  AXONFLOW_LICENSE_TOKEN="$SECRET_TOKEN_FULL" \
+  bash "$STAGE_DIR/scripts/status.sh" 2>&1)
+if echo "$PRO_OUT" | grep -qE "tier[[:space:]]+Pro"; then
+  pass "status.sh reports Pro tier when AXONFLOW_LICENSE_TOKEN is set"
+else
+  fail "status.sh did not report Pro tier; output: $PRO_OUT"
+fi
+if echo "$PRO_OUT" | grep -q "AXON-\\.\\.\\.9999"; then
+  pass "status.sh emits AXON-...XXXX redaction with last-4 chars"
+else
+  fail "status.sh missing last-4 redaction; output: $PRO_OUT"
+fi
+if echo "$PRO_OUT" | grep -q "$SECRET_TOKEN_MIDDLE"; then
+  fail "status.sh LEAKED full license token to stdout: $PRO_OUT"
+else
+  pass "status.sh does not leak full license token"
+fi
+
+# Missing-registration path: hint should reference the recovery script.
+rm -f "$STATUS_HOME/.config/axonflow/try-registration.json"
+NOREG_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off bash "$STAGE_DIR/scripts/status.sh" 2>&1)
+if echo "$NOREG_OUT" | grep -q "recover-credentials.sh"; then
+  pass "status.sh surfaces recovery hint when registration file is missing"
+else
+  fail "status.sh missing recovery hint; output: $NOREG_OUT"
+fi
+rm -rf "$STATUS_HOME"
 
 # 3. Validate hooks.json hook command paths resolve to staged scripts.
 HOOKS_JSON="$STAGE_DIR/hooks/hooks.json"

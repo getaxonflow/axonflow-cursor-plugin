@@ -4,6 +4,15 @@
 
 ### Added
 
+- **Status surface (`scripts/status.sh` + `/axonflow-status` skill).** Prints
+  the `tenant_id` (which Pro buyers paste into the custom field at Stripe
+  Checkout), the active tier (`Free` or `Pro`), the agent endpoint, the
+  config / token file paths, and the upgrade URL. The license token is
+  redacted to last-4 chars (`AXON-...XXXX`) so the output is safe to
+  screen-share or paste into a support ticket. Resolution mirrors
+  `pre-tool-check.sh`: env first, then `~/.config/axonflow/license-token`
+  (mode `0600` only — looser permissions are reported but not consumed).
+  Surfaces a recovery hint when `try-registration.json` is missing.
 - **Pro tier license token wiring (`AXONFLOW_LICENSE_TOKEN`).** Buyers who
   completed Stripe Checkout for the Pro tier receive an `AXON-`-prefixed
   license token by email; the plugin now forwards it as the `X-License-Token`
