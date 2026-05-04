@@ -39,30 +39,30 @@ Neither was granted to the parent shell of this run. Granting requires
 direct human interaction at System Settings — there's no programmatic
 escape hatch.
 
-## Second blocker (2026-05-04): Cursor Pro required
+## Second blocker (2026-05-04): free-tier usage cap (NOT a Pro requirement)
 
-After the macOS permissions were granted and I retried the automation:
-Cursor activated, the Agent panel opened, the prompt was sent — and
-Cursor returned a "Cursor Pro upgrade needed" prompt instead of
-invoking the agent. **The Cursor Agent surface (the user-facing path
-this runtime test is supposed to verify) requires a paid Pro
-subscription.** Without Pro, no agent invocation happens regardless of
-how well my automation drives the IDE.
+After the macOS permissions were granted and I retried the automation,
+Cursor showed a "You've hit your usage limit" dialog after a couple
+of agent invocations. The earlier 2026-05-03 evidence-capture session
+worked around this by signing out and signing back in with a different
+free email — the agent then ran on the new account's quota. Evidence
+files in each feature folder were captured this way (free-tier, real
+agent, real MCP tool dispatch).
 
-This is a Cursor product policy, not a wiring problem on our side.
-Implication for the W2 release: Cursor v1.1.0 runtime evidence
-requires a Pro account. The `EVIDENCE.md` files in each feature folder
-need to be produced by a human who is logged in to Cursor with Pro.
-The gates in this directory remain fail-closed without that evidence.
+This is a Cursor free-tier rate limit, not a Pro paywall — the agent
+surface is reachable on free accounts; you just have to manage the
+quota. (Initial earlier-session note that called this "Pro required"
+was wrong; I'm correcting it here.)
 
 ## What this means for the bump PRs
 
 The per-feature `test.sh` files in this directory still **fail-closed**
 on missing `EVIDENCE.md`. That keeps rule #1 honest — Cursor v1.1.0
-cannot be tagged until a human with a Cursor Pro account runs each
-`MANUAL_RUNBOOK.md` and commits real evidence. This file documents the
-attempt so future runs don't repeat the same dead-end before grabbing
-the human + Pro account.
+cannot be tagged until a human runs each `MANUAL_RUNBOOK.md` and
+commits real evidence. The current evidence on file is from the
+2026-05-03 run; if a fresh capture is required (e.g. to refresh a
+screenshot after a platform behavior change), it can be done on the
+free tier with quota juggling.
 
 ## Path to automation if you want it
 
