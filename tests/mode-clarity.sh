@@ -99,7 +99,10 @@ run_scenario() {
   canary_line=$(grep "^\[AxonFlow\] Connected to AxonFlow at" "$stderr_file")
   local actual_url actual_mode
   actual_url=$(printf '%s\n' "$canary_line" | sed -E 's|^\[AxonFlow\] Connected to AxonFlow at ([^ ]+) .*$|\1|')
-  actual_mode=$(printf '%s\n' "$canary_line" | sed -E 's|^.*\(mode=([^)]+)\)$|\1|')
+  # The canary line is `... (mode=X)` optionally followed by ` — <tier suffix>`
+  # (W4 v1 paid tier appends "— Pro tier active" when X-License-Token is
+  # present). Match "(mode=X)" anywhere in the line, not just at end-of-line.
+  actual_mode=$(printf '%s\n' "$canary_line" | sed -E 's|^.*\(mode=([^)]+)\).*$|\1|')
 
   # Anti-spoof: compare parsed URL components.
   local actual_parsed expected_parsed

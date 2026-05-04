@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Pro tier license token wiring (`AXONFLOW_LICENSE_TOKEN`).** Buyers who
+  completed Stripe Checkout for the Pro tier receive an `AXON-`-prefixed
+  license token by email; the plugin now forwards it as the `X-License-Token`
+  header on every governed agent call, so the request joins the Pro tier
+  rather than the free tier. Resolution order: env var first, then
+  `~/.config/axonflow/license-token` (mode `0600` only — files with looser
+  permissions are refused with a stderr warning). When a token is loaded,
+  the mode-clarity canary appends a `Pro tier active` suffix so the active
+  tier is visible at a glance.
+- **Email-recovery helper (`scripts/recover-credentials.sh` +
+  `/recover-credentials` skill).** Drives the full
+  `/api/v1/recover` → magic-link → `/api/v1/recover/verify` flow against
+  a live agent, then writes the new credentials to
+  `~/.config/axonflow/try-registration.json` with mode `0600`. Accepts
+  either the bare hex token or the full magic-link URL from the email,
+  and the community-saas bootstrap picks up the new credentials on the
+  next governed tool call. The `/recover-credentials` skill instructs the
+  agent to invoke the script via the Shell tool when the user reports
+  lost free-tier credentials.
+
 ## [1.1.0] - 2026-05-04 — 4 read-side governance skills
 
 ### Added

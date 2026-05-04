@@ -59,7 +59,8 @@ chmod +x "$STAGE_DIR/scripts/"*.sh
 # 2. Validate file list.
 for f in .cursor-plugin/plugin.json mcp.json hooks/hooks.json \
          scripts/pre-tool-check.sh scripts/post-tool-audit.sh \
-         scripts/telemetry-ping.sh scripts/mcp-auth-headers.sh; do
+         scripts/telemetry-ping.sh scripts/mcp-auth-headers.sh \
+         scripts/recover-credentials.sh; do
   if [ -f "$STAGE_DIR/$f" ]; then pass "staged $f"
   else fail "missing $f after stage"
   fi

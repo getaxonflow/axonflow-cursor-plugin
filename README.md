@@ -247,6 +247,38 @@ export AXONFLOW_ENDPOINT=https://your-axonflow.example.com
 export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
 ```
 
+### Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
+
+Buyers who completed Stripe Checkout for the Pro tier receive an `AXON-`-prefixed license token by email. The plugin forwards it as the `X-License-Token` header on every governed agent call so the request joins the Pro tier (extended audit retention, higher quotas, plugin-claimed entitlements).
+
+The plugin reads the token in this order — first match wins:
+
+1. `AXONFLOW_LICENSE_TOKEN` environment variable (drop into your shell profile for cross-session persistence).
+2. `~/.config/axonflow/license-token` file (mode `0600` inside the same `0700` directory the community-saas registration lives in). Convenient when you don't want the token in your shell history; safe-mode-only — files with looser permissions are refused with a stderr warning.
+
+When a token is loaded, the mode-clarity canary appends a `Pro tier active` suffix so it's visible at a glance:
+
+```
+[AxonFlow] Connected to AxonFlow at http://localhost:8080 (mode=self-hosted) — Pro tier active
+```
+
+The free / community tier behaviour is unchanged when no token is set — the plugin sends no `X-License-Token` header and the agent treats the request as free-tier.
+
+### Recovering lost credentials (`scripts/recover-credentials.sh`)
+
+If you lose your `~/.config/axonflow/try-registration.json` (deleted by mistake, switched machines, hit the unsafe-permissions guard, etc.), run the recovery helper from the plugin install directory:
+
+```bash
+cd ~/.cursor/plugins/local/axonflow-cursor-plugin
+bash scripts/recover-credentials.sh
+```
+
+The script prompts for the email the tenant was originally registered with, requests a magic link via `POST /api/v1/recover` (which always returns `202` to defend against email enumeration), waits for you to paste either the magic-link URL or the bare token from the email, calls `POST /api/v1/recover/verify`, and writes the new credentials to `~/.config/axonflow/try-registration.json` with mode `0600`. The community-saas bootstrap picks them up on the next governed tool call — no shell re-export, no Cursor reload.
+
+In the chat, use the `/recover-credentials` skill to have the agent walk you through the same flow. The skill instructs the agent to invoke the script via the Shell tool; you fill in the email and token in the integrated terminal.
+
+Recovery is for **free-tier credential loss only**. If you lose your Pro `AXONFLOW_LICENSE_TOKEN`, recover it from the original Stripe / billing email rather than this script.
+
 ---
 
 ## What gets checked
