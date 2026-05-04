@@ -413,11 +413,21 @@ if [ -f "$REG" ]; then
 else
   fail "try-registration.json was NOT written"
 fi
-REG_MODE=$(stat -f %Lp "$REG" 2>/dev/null || stat -c %a "$REG" 2>/dev/null)
-if [ "$REG_MODE" = "600" ]; then
-  pass "try-registration.json has mode 0600"
+# Cross-platform stat: GNU (Linux) `-c %a` first, then BSD (macOS) `-f %Lp`.
+# Bare `||` chain is broken because GNU `stat -f` interprets -f as
+# --file-system and exits 0 with verbose multi-line output. Probe + validate
+# numeric, same defensive pattern the production scripts use.
+REG_MODE=$(stat -c %a "$REG" 2>/dev/null) || REG_MODE=""
+case "$REG_MODE" in
+  ''|*[!0-9]*) REG_MODE=$(stat -f %Lp "$REG" 2>/dev/null) || REG_MODE="" ;;
+esac
+case "$REG_MODE" in
+  ''|*[!0-9]*) REG_MODE="" ;;
+esac
+if [ "$REG_MODE" = "600" ] || [ "$REG_MODE" = "0600" ]; then
+  pass "try-registration.json has mode 0600 (got $REG_MODE)"
 else
-  fail "try-registration.json mode is $REG_MODE, expected 600"
+  fail "try-registration.json mode is '$REG_MODE', expected 600"
 fi
 PERSISTED_TENANT=$(jq -r '.tenant_id // empty' < "$REG" 2>/dev/null)
 if [ "$PERSISTED_TENANT" = "cs_runtime_test_tenant" ]; then
