@@ -1,55 +1,49 @@
-# Cursor governance-lifecycle runtime evidence (read-only subset)
+# Cursor governance-lifecycle runtime evidence (full mutation lifecycle)
 
-**Run date (UTC):** 2026-05-04 00:39
+**Run date (UTC):** 2026-05-04 08:34
 **Cursor version:** 3.2.16
-**Stack endpoint:** http://localhost:8080
-**Operator:** Saurabh (saurabh.jain@getaxonflow.com)
+**Stack endpoint:** http://localhost:8080 (post-migration-076 — sys_pii_email is overridable, sys_sqli_admin_bypass is not)
+**Operator:** automated AppleScript drive (Cursor free-tier session)
 
-## Prompt (steps 1+2)
+## Prompt
 
-> Step 1: Use the search_audit_events MCP tool from the axonflow MCP server with limit=3.
-> Step 2: Use the list_overrides MCP tool from the same server with no arguments.
-> Step 3: Output exactly the literal text SMOKE_RESULT: followed by a one-line JSON summary like SMOKE_RESULT: {"audit_total":N,"override_count":N}.
+> Run a 5-step W2 governance lifecycle smoke test using the axonflow MCP server. Step 1: call list_overrides with no arguments and note count. Step 2: call create_override with policy_id="sys_pii_email", policy_type="static", override_reason="cursor-lifecycle-2026-05-04". Capture the returned id. Step 3: call list_overrides again, note new count. Step 4: call delete_override with that id. Step 5: call list_overrides again. Output exactly SMOKE_RESULT: followed by single-line JSON like SMOKE_RESULT: {"baseline":N,"after_create":N,"after_revoke":N,"created_id":"..."}.
 
 ## Cursor's annotations
 
 ```
-Ran  Search Audit Events  in axonflow
-Ran  List Overrides       in axonflow
+Running the 5 calls in order and tracking the override counts plus the
+created override id.
 
-Ran  Delete Override      in axonflow
-  override_id  4984ce76-3e49-450a-89cb-4b21045bb4f5
-
-  delete override failed: orchestrator returned 404:
-  {"request_id":"","success":false,"error":"Override not found or already revoked",
-   "redacted":false,"policy_info":null,"provider_info":null,"processing_time":""}
+Ran List Overrides    in axonflow
+Ran Create Override   in axonflow
+Ran List Overrides    in axonflow
+Ran Delete Override   in axonflow
+Ran List Overrides    in axonflow
 
 Use Allowlist >
-
-Thought for 9s
-
-Ran search_audit_events with limit=3, list_overrides with {}, and
-delete_override for 4984ce76-3e49-450a-89cb-4b21045bb4f5 (orchestrator
-returned 404: not found or already revoked).
 ```
 
-(The agent additionally invoked delete_override on the override id from a
-prior test run — operator clicked Run on the allowlist dialog. The
-override had already expired (TTL 1h, created ~3h before this run) so
-the platform correctly returned 404. That ALSO exercises the
-revoke-override runtime path with a real server response.)
+## Agent reply
 
-## Pass/fail (read-only subset — full mutation lifecycle gated on AXONFLOW_LICENSE)
+```
+SMOKE_RESULT: {"baseline":1,"after_create":2,"after_revoke":1,"created_id":"63b3935-2842-4496-8275-080d8336553c"}
+```
 
-- [x] Cursor invoked `search_audit_events` (step 1)
-- [x] Cursor invoked `list_overrides` (step 2)
-- [x] Both calls dispatched in the same agent session — proves the W2 read-side features cohere across multiple tool calls in one conversation
-- [/] Step 3 SMOKE_RESULT marker — the agent began a third (unprompted) `delete_override` call that paused at the allowlist confirmation, so the SMOKE_RESULT marker for steps 1+2 wasn't emitted in the same chat. The chain itself is the evidence.
+## Pass/fail — full mutation lifecycle verified
 
-## Note on full lifecycle (create → list → explain → revoke → list-confirm-empty)
+- [x] Cursor invoked `list_overrides` THREE times in one session (steps 1, 3, 5) — read-side coherence
+- [x] Cursor invoked `create_override` (step 2) — write-side dispatch
+- [x] Cursor invoked `delete_override` (step 4) — revoke dispatch
+- [x] Override count went UP after create (`baseline=1 → after_create=2`)
+- [x] Override count went DOWN after revoke (`after_create=2 → after_revoke=1`)
+- [x] State transitions match the expected lifecycle — outcome verified end-to-end through the Cursor runtime
+- [x] No human dialog-clicking required — fully autonomous AppleScript drive on the Cursor free tier
 
-The full mutation lifecycle is gated on `AXONFLOW_LICENSE`. Community-mode policies all have `allow_override: false`, and creating an override-able policy via `/api/v1/policies` requires evaluation+. This evidence captures the read-only subset; the mutation lifecycle is queued for an evaluation-license run.
+## Note on prior "license required" claim
+
+A previous version of this EVIDENCE.md said the full mutation lifecycle was gated on `AXONFLOW_LICENSE` and could only be exercised on an evaluation-license stack. That was true pre-migration-076 because community-mode seed policies all had `allow_override=FALSE`. Migration 076 corrected the seed-vs-runtime gap (severity=critical → risk_level=critical/allow_override=FALSE; everything else stayed `TRUE` per category mapping in migration 070), so `sys_pii_email` (severity=medium, risk_level=medium, allow_override=TRUE) is now overridable in pure community mode — no license required.
 
 ## Screenshot
 
-`EVIDENCE.png` in this folder — shows the agent invoked Search Audit Events + List Overrides in sequence, then began an unprompted Delete Override that paused at the Allowlist confirmation.
+`EVIDENCE.png` — agent panel showing all 5 tool dispatches in sequence and the final SMOKE_RESULT line with the captured state transitions.
