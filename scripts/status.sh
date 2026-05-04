@@ -30,6 +30,12 @@ else
   MODE="self-hosted"
 fi
 
+# AXONFLOW_CONFIG_DIR is a status-side override only. The rest of the plugin
+# (community-saas-bootstrap.sh, recover-credentials.sh, pre-tool-check.sh)
+# currently hardcodes ${HOME}/.config/axonflow, so setting AXONFLOW_CONFIG_DIR
+# only changes where THIS script looks. Useful for test harnesses and for
+# inspecting an alternate-HOME install; not a substitute for the canonical
+# location.
 CONFIG_DIR="${AXONFLOW_CONFIG_DIR:-${HOME}/.config/axonflow}"
 REGISTRATION_FILE="${CONFIG_DIR}/try-registration.json"
 LICENSE_TOKEN_FILE="${CONFIG_DIR}/license-token"
