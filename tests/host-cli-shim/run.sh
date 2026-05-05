@@ -175,6 +175,11 @@ captured_with_license_token() {
   jq -s 'map(select(.headers["x-license-token"] != null)) | length' "$CAPTURE_FILE"
 }
 
+# Returns the count of captured requests carrying X-Axonflow-Client (ADR-050 §4).
+captured_with_client_header() {
+  jq -s 'map(select(.headers["x-axonflow-client"] != null)) | length' "$CAPTURE_FILE"
+}
+
 captured_with_tool() {
   local tool="$1"
   jq -s --arg t "$tool" 'map(select(.tool_name == $t)) | length' "$CAPTURE_FILE"
@@ -215,6 +220,15 @@ LIC_COUNT=$(captured_with_license_token)
 [ "$LIC_COUNT" -eq 0 ] && pass "Free: NO captured requests carry X-License-Token" \
   || fail "Free: $LIC_COUNT request(s) carried X-License-Token (should be 0)"
 
+# ADR-050 §4: X-Axonflow-Client ships on EVERY request regardless of tier.
+CLIENT_COUNT=$(captured_with_client_header)
+TOTAL_COUNT_FREE=$(jq -s 'length' "$CAPTURE_FILE")
+if [ "$CLIENT_COUNT" -ge 1 ] && [ "$CLIENT_COUNT" -eq "$TOTAL_COUNT_FREE" ]; then
+  pass "Free: ALL $TOTAL_COUNT_FREE captured request(s) carry X-Axonflow-Client"
+else
+  fail "Free: $CLIENT_COUNT of $TOTAL_COUNT_FREE captured requests carried X-Axonflow-Client (expected all)"
+fi
+
 # ---------------------------------------------------------------------------
 # 6. Scenario B — Pro tier (env)
 # ---------------------------------------------------------------------------
@@ -232,20 +246,34 @@ else
   fail "Pro/env: $LIC_COUNT of $TOTAL_COUNT captured requests carried X-License-Token (expected all)"
 fi
 
+# ADR-050 §4: X-Axonflow-Client ships on EVERY request, including Pro/env.
+CLIENT_COUNT=$(captured_with_client_header)
+if [ "$CLIENT_COUNT" -eq "$TOTAL_COUNT" ]; then
+  pass "Pro/env: ALL $TOTAL_COUNT captured request(s) carry X-Axonflow-Client"
+else
+  fail "Pro/env: $CLIENT_COUNT of $TOTAL_COUNT carried X-Axonflow-Client (expected all)"
+fi
+
 TOKEN_OBSERVED=$(jq -s -r '.[0].headers["x-license-token"] // empty' "$CAPTURE_FILE")
 [ "$TOKEN_OBSERVED" = "$LICENSE_TOKEN" ] && pass "Pro/env: captured token value matches AXONFLOW_LICENSE_TOKEN" \
   || fail "Pro/env: captured token '$TOKEN_OBSERVED' != env '$LICENSE_TOKEN'"
 
-# Cursor mcp.json has no headersHelper today → MCP traffic from the host
-# never carries X-License-Token. Tracked as cursor#43.
+# mcp.json points at scripts/mcp-auth-headers.sh which runs the same code
+# path as per-call hooks, so X-License-Token + X-Axonflow-Client are
+# forwarded the same way on the MCP session.
 if [ -z "$HEADERS_HELPER" ]; then
-  xfail "Pro/env: mcp.json has no headersHelper — Pro tier broken on MCP path (cursor#43)"
+  fail "Pro/env: mcp.json missing headersHelper — MCP traffic would lose X-License-Token + X-Axonflow-Client"
 else
   HEADERS_PRO=$(invoke_headers_helper)
   if echo "$HEADERS_PRO" | jq -e --arg t "$LICENSE_TOKEN" '."X-License-Token" == $t' >/dev/null 2>&1; then
-    pass "Pro/env: headersHelper forwards X-License-Token (cursor#43 fixed)"
+    pass "Pro/env: headersHelper forwards X-License-Token"
   else
-    xfail "Pro/env: headersHelper drops X-License-Token (cursor#43). got: $HEADERS_PRO"
+    fail "Pro/env: headersHelper dropped X-License-Token. got: $HEADERS_PRO"
+  fi
+  if echo "$HEADERS_PRO" | jq -e '."X-Axonflow-Client" | startswith("cursor-plugin/")' >/dev/null 2>&1; then
+    pass "Pro/env: headersHelper forwards X-Axonflow-Client"
+  else
+    fail "Pro/env: headersHelper dropped X-Axonflow-Client. got: $HEADERS_PRO"
   fi
 fi
 
@@ -272,6 +300,15 @@ if [ "$LIC_COUNT" -ge 1 ] && [ "$LIC_COUNT" -eq "$TOTAL_COUNT" ]; then
 else
   fail "Pro/file: $LIC_COUNT of $TOTAL_COUNT captured requests carried X-License-Token (expected all)"
 fi
+
+# ADR-050 §4: X-Axonflow-Client ships on EVERY request, including Pro/file.
+CLIENT_COUNT=$(captured_with_client_header)
+if [ "$CLIENT_COUNT" -eq "$TOTAL_COUNT" ]; then
+  pass "Pro/file: ALL $TOTAL_COUNT captured request(s) carry X-Axonflow-Client"
+else
+  fail "Pro/file: $CLIENT_COUNT of $TOTAL_COUNT carried X-Axonflow-Client (expected all)"
+fi
+
 TOKEN_OBSERVED=$(jq -s -r '.[0].headers["x-license-token"] // empty' "$CAPTURE_FILE")
 [ "$TOKEN_OBSERVED" = "$TOKEN_VALUE" ] && pass "Pro/file: captured token value matches license-token plain file" \
   || fail "Pro/file: captured token '$TOKEN_OBSERVED' != file '$TOKEN_VALUE'"

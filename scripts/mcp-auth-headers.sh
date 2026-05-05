@@ -52,9 +52,38 @@ EOF
   : >"$DISCLOSURE_STAMP" 2>/dev/null
 fi
 
+# ADR-050 §4: every governed request to the agent carries X-Axonflow-Client
+# so the agent can derive request scope (plugin) and validate it against the
+# token's aud.scope via HasScope().
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/client-header.sh"
+
 AUTH="${AXONFLOW_AUTH:-}"
-if [ -n "$AUTH" ]; then
-  echo "{\"Authorization\": \"Basic $AUTH\"}"
+LICENSE_TOKEN="${AXONFLOW_LICENSE_TOKEN:-}"
+CLIENT_HEADER="${AXONFLOW_CLIENT_HEADER}"
+
+# Build the JSON header object via jq when available so token values are
+# json-escaped correctly. Without jq, fall back to a string-concat path
+# (Authorization + X-Axonflow-Client are simple strings; X-License-Token
+# would need careful escaping so we drop it on this fallback — per-call
+# hooks still ship it).
+if command -v jq &>/dev/null; then
+  if [ -n "$AUTH" ] && [ -n "$LICENSE_TOKEN" ]; then
+    jq -nc --arg auth "$AUTH" --arg lt "$LICENSE_TOKEN" --arg ch "$CLIENT_HEADER" \
+      '{"Authorization": ("Basic " + $auth), "X-License-Token": $lt, "X-Axonflow-Client": $ch}'
+  elif [ -n "$AUTH" ]; then
+    jq -nc --arg auth "$AUTH" --arg ch "$CLIENT_HEADER" \
+      '{"Authorization": ("Basic " + $auth), "X-Axonflow-Client": $ch}'
+  elif [ -n "$LICENSE_TOKEN" ]; then
+    jq -nc --arg lt "$LICENSE_TOKEN" --arg ch "$CLIENT_HEADER" \
+      '{"X-License-Token": $lt, "X-Axonflow-Client": $ch}'
+  else
+    jq -nc --arg ch "$CLIENT_HEADER" '{"X-Axonflow-Client": $ch}'
+  fi
 else
-  echo "{}"
+  if [ -n "$AUTH" ]; then
+    echo "{\"Authorization\": \"Basic $AUTH\", \"X-Axonflow-Client\": \"$CLIENT_HEADER\"}"
+  else
+    echo "{\"X-Axonflow-Client\": \"$CLIENT_HEADER\"}"
+  fi
 fi

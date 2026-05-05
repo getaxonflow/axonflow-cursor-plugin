@@ -68,12 +68,19 @@ fi
 
 echo "[recover-credentials] endpoint=$ENDPOINT mode=$MODE email=$EMAIL" >&2
 
+# ADR-050 §4: identify ourselves to the agent so it can derive request scope.
+# /api/v1/recover is unauthenticated by design but the header still belongs.
+# shellcheck disable=SC1091
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+. "${SCRIPT_DIR}/client-header.sh"
+
 # Step 2: POST /api/v1/recover. Always 202 — anti-enumeration. The
 # response body is intentionally generic; we don't surface anything from it
 # to the user (would otherwise leak whether the email is on file).
 RECOVER_HTTP=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 10 \
   -X POST "$ENDPOINT/api/v1/recover" \
   -H "Content-Type: application/json" \
+  -H "X-Axonflow-Client: ${AXONFLOW_CLIENT_HEADER}" \
   -d "$(jq -nc --arg e "$EMAIL" '{email: $e}')" 2>/dev/null)
 if [ "$RECOVER_HTTP" != "202" ]; then
   # Network failure or unexpected status. Keep going — the user might
@@ -123,6 +130,7 @@ fi
 VERIFY_RESP=$(curl -sS --max-time 10 \
   -X POST "$ENDPOINT/api/v1/recover/verify" \
   -H "Content-Type: application/json" \
+  -H "X-Axonflow-Client: ${AXONFLOW_CLIENT_HEADER}" \
   -d "$(jq -nc --arg t "$TOKEN" '{token: $t}')" \
   -w "\n%{http_code}" 2>/dev/null)
 VERIFY_CODE=$(printf '%s' "$VERIFY_RESP" | tail -n1)

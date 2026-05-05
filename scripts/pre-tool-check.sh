@@ -91,11 +91,16 @@ AUTH="${AXONFLOW_AUTH:-}"
 # Build header array safely (avoids word-splitting). The license-token header
 # is appended whenever LICENSE_TOKEN is set; the platform middleware treats
 # absence as free tier rather than rejecting, so a missing token is safe to
-# omit entirely.
+# omit entirely. ADR-050 §4: X-Axonflow-Client ships on every request so the
+# agent can derive request scope (plugin) and validate it against the token's
+# aud.scope via HasScope().
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/client-header.sh"
 AUTH_HEADER=()
 if [ -n "$AUTH" ]; then
   AUTH_HEADER+=(-H "Authorization: Basic $AUTH")
 fi
+AUTH_HEADER+=(-H "X-Axonflow-Client: ${AXONFLOW_CLIENT_HEADER}")
 if [ -n "$LICENSE_TOKEN" ]; then
   AUTH_HEADER+=(-H "X-License-Token: $LICENSE_TOKEN")
 fi

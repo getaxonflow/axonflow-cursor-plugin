@@ -56,10 +56,15 @@ if [ -z "$LICENSE_TOKEN" ] && [ -f "$LICENSE_TOKEN_FILE" ]; then
   # post-tool-audit.sh runs once per tool call and we don't want to spam.
 fi
 
+# ADR-050 §4: X-Axonflow-Client identifies the calling plugin so the agent
+# can derive request scope (plugin) and validate against the token's aud.scope.
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/client-header.sh"
 AUTH_HEADER=()
 if [ -n "$AUTH" ]; then
   AUTH_HEADER+=(-H "Authorization: Basic $AUTH")
 fi
+AUTH_HEADER+=(-H "X-Axonflow-Client: ${AXONFLOW_CLIENT_HEADER}")
 if [ -n "$LICENSE_TOKEN" ]; then
   AUTH_HEADER+=(-H "X-License-Token: $LICENSE_TOKEN")
 fi
