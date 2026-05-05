@@ -41,14 +41,17 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -uo pipefail
-          # Per-repo: openclaw plugin is a TypeScript npm package whose
-          # user-facing surface is the bundled `scripts/` (compiled to dist/),
-          # `hooks/` CLIs, and the OpenClaw plugin manifest.
+          # Cursor plugin user-facing surface: bash scripts called by Cursor
+          # hooks, skill/rule manifests, .cursor-plugin/ plugin manifest, and
+          # mcp.json wiring that the host CLI reads at session start.
           USER_FACING_GLOBS=(
             'scripts/'
             'hooks/'
             'skills/'
             'rules/'
+            '.cursor-plugin/'
+            'mcp.json'
+            '.mcp.json'
           )
           CHANGED=$(git diff --name-only "$BASE" "$HEAD" || true)
           echo "Changed files in PR:" >&2
