@@ -4,6 +4,17 @@
 
 ### Added
 
+- **`scripts/status.sh` tier line now surfaces Pro license expiry date.**
+  The status output's `tier` line parses the JWT `exp` claim from the
+  configured Pro license token and renders one of three shapes: `Pro
+  (expires YYYY-MM-DD, N days remaining)` when active, `Free (Pro
+  expired YYYY-MM-DD — visit https://getaxonflow.com/pro to renew)`
+  when the token is on disk but its `exp` has passed (plugin will not
+  forward an expired token), or `Free (no Pro license configured)`
+  when no token is loaded. Lets users see their renewal date without
+  hitting the agent and catches the lapsed-token state before their
+  next governed call. Display only — JWT signature validation remains
+  the platform's job.
 - **Status surface (`scripts/status.sh` + `/axonflow-status` skill).** Prints
   the `tenant_id` (which Pro buyers paste into the custom field at Stripe
   Checkout), the active tier (`Free` or `Pro`), the agent endpoint, the

@@ -69,8 +69,12 @@ done
 # 2b. Status-script smoke. Drives status.sh against an isolated $HOME so it
 # never touches the developer's real ~/.config/axonflow. Asserts:
 #   - tenant_id from try-registration.json renders into output
-#   - "tier Free" when no AXONFLOW_LICENSE_TOKEN env is set
-#   - "tier Pro" + last-4 redaction when token is set
+#   - "tier Free (no Pro license configured)" when no AXONFLOW_LICENSE_TOKEN
+#     env is set
+#   - "tier Pro (expires YYYY-MM-DD, N days remaining)" when a Pro-active
+#     token is set (V1 SaaS Plugin Pro tier-expiry surface parity)
+#   - "tier Free (Pro expired YYYY-MM-DD — visit ... to renew)" when the
+#     token is on disk but its `exp` is in the past
 #   - the FULL token never appears in stdout (the codex#41 regression)
 #   - recovery hint surfaces when the registration file is missing
 STATUS_HOME=$(mktemp -d 2>/dev/null || mktemp -d -t status-home)
@@ -81,42 +85,75 @@ cat > "$STATUS_HOME/.config/axonflow/try-registration.json" <<'EOJ'
 EOJ
 chmod 0600 "$STATUS_HOME/.config/axonflow/try-registration.json"
 
-# Free-tier path: no env token, expect "Free" + tenant_id surfaced.
+# Helper: mint a structurally-valid AXON- token whose JWT payload contains
+# a given exp (unix epoch). Signature is a placeholder — status.sh only
+# parses, never validates. base64url with padding stripped, per RFC 7515.
+mint_axon_jwt() {
+  local exp_epoch="$1"
+  local hdr
+  hdr=$(printf '%s' '{"alg":"EdDSA","typ":"JWT"}' | base64 | tr '+/' '-_' | tr -d '=')
+  local payload
+  payload=$(printf '{"sub":"smoke","exp":%s}' "$exp_epoch" | base64 | tr '+/' '-_' | tr -d '=')
+  # Pad signature so the whole token is comfortably long; status doesn't
+  # gate on length but readers expect ~real-token shape.
+  local sig="placeholder-signature-padding-padding-padding-padding-padding-pa"
+  printf 'AXON-%s.%s.%s' "$hdr" "$payload" "$sig"
+}
+
+# Free-tier path: no env token, expect "Free (no Pro license configured)"
+# + tenant_id surfaced.
 FREE_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off bash "$STAGE_DIR/scripts/status.sh" 2>&1)
 if echo "$FREE_OUT" | grep -q "tenant_id:[[:space:]]*cs_smoke-tenant-xyz"; then
   pass "status.sh surfaces tenant_id from try-registration.json"
 else
   fail "status.sh missing tenant_id; output: $FREE_OUT"
 fi
-if echo "$FREE_OUT" | grep -qE "tier[[:space:]]+Free"; then
-  pass "status.sh reports Free tier when no token configured"
+if echo "$FREE_OUT" | grep -qE "tier[[:space:]]+Free \(no Pro license configured\)"; then
+  pass "status.sh Free-tier line shape (no Pro license configured)"
 else
   fail "status.sh did not report Free tier; output: $FREE_OUT"
 fi
 
-# Pro-tier path: set env token with a known last-4. The full token is a
-# bearer credential and MUST NOT appear in stdout — only the last 4 chars
-# inside an `AXON-...XXXX` redaction. Mirrors the axonflow-codex-plugin#41
-# fix where cmd_status leaked the entire token.
-SECRET_TOKEN_FULL="AXON-eyJsupersecretjwtbodynevershow-tail9999"
-SECRET_TOKEN_MIDDLE="supersecretjwtbody"
+# Pro-tier ACTIVE path: mint a token with exp ~30 days in the future.
+# Expect "tier Pro (expires YYYY-MM-DD, N days remaining)" + redacted last-4.
+PRO_EXP=$(( $(date -u +%s) + 30 * 86400 ))
+PRO_TOKEN=$(mint_axon_jwt "$PRO_EXP")
 PRO_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off \
-  AXONFLOW_LICENSE_TOKEN="$SECRET_TOKEN_FULL" \
+  AXONFLOW_LICENSE_TOKEN="$PRO_TOKEN" \
   bash "$STAGE_DIR/scripts/status.sh" 2>&1)
-if echo "$PRO_OUT" | grep -qE "tier[[:space:]]+Pro"; then
-  pass "status.sh reports Pro tier when AXONFLOW_LICENSE_TOKEN is set"
+if echo "$PRO_OUT" | grep -qE "tier[[:space:]]+Pro \(expires [0-9]{4}-[0-9]{2}-[0-9]{2}, [0-9]+ days remaining\)"; then
+  pass "status.sh Pro-active line shape (expires YYYY-MM-DD, N days remaining)"
 else
-  fail "status.sh did not report Pro tier; output: $PRO_OUT"
+  fail "status.sh did not report Pro-active line; output: $PRO_OUT"
 fi
-if echo "$PRO_OUT" | grep -q "AXON-\\.\\.\\.9999"; then
+PRO_TAIL4="${PRO_TOKEN: -4}"
+if echo "$PRO_OUT" | grep -qF "AXON-...${PRO_TAIL4}"; then
   pass "status.sh emits AXON-...XXXX redaction with last-4 chars"
 else
   fail "status.sh missing last-4 redaction; output: $PRO_OUT"
 fi
-if echo "$PRO_OUT" | grep -q "$SECRET_TOKEN_MIDDLE"; then
+if echo "$PRO_OUT" | grep -qF "$PRO_TOKEN"; then
   fail "status.sh LEAKED full license token to stdout: $PRO_OUT"
 else
   pass "status.sh does not leak full license token"
+fi
+
+# Pro-tier EXPIRED path: mint a token with exp ~365 days in the past.
+# Expect "tier Free (Pro expired YYYY-MM-DD — visit ... to renew)".
+EXPIRED_EXP=$(( $(date -u +%s) - 365 * 86400 ))
+EXPIRED_TOKEN=$(mint_axon_jwt "$EXPIRED_EXP")
+EXPIRED_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off \
+  AXONFLOW_LICENSE_TOKEN="$EXPIRED_TOKEN" \
+  bash "$STAGE_DIR/scripts/status.sh" 2>&1)
+if echo "$EXPIRED_OUT" | grep -qE "tier[[:space:]]+Free \(Pro expired [0-9]{4}-[0-9]{2}-[0-9]{2} — visit https?://[^ ]+ to renew\)"; then
+  pass "status.sh Pro-expired line shape (Pro expired YYYY-MM-DD — visit ... to renew)"
+else
+  fail "status.sh did not report Pro-expired line; output: $EXPIRED_OUT"
+fi
+if echo "$EXPIRED_OUT" | grep -qF "$EXPIRED_TOKEN"; then
+  fail "status.sh LEAKED expired token to stdout"
+else
+  pass "status.sh redacts expired token"
 fi
 
 # Missing-registration path: hint should reference the recovery script.
