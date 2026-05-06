@@ -251,9 +251,20 @@ export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
 
 Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day) to **30-day retention** and **1,000 events / day** for a 90-day window. One-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [www.getaxonflow.com/pricing](https://www.getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
 
-To upgrade: run `bash scripts/status.sh` (next section) to surface your `cs_<uuid>` tenant ID, then visit [www.getaxonflow.com/pricing](https://www.getaxonflow.com/pricing/) and paste it into the **AxonFlow tenant ID** custom field at Stripe Checkout.
+To activate Pro on this Cursor install:
 
-Buyers who completed Stripe Checkout receive an `AXON-`-prefixed license token by email. The plugin forwards it as the `X-License-Token` header on every governed agent call so the request joins the Pro tier (extended audit retention, higher quotas, plugin-claimed entitlements).
+1. **Find your tenant ID.** From the plugin install root, run:
+
+    ```bash
+    cd ~/.cursor/plugins/local/axonflow-cursor-plugin
+    bash scripts/status.sh
+    ```
+
+    The output includes a `tenant_id   cs_<uuid>` line — that's the value Stripe Checkout needs. Copy it. (Or ask the agent in chat: "what is my AxonFlow tenant ID?" — the [`axonflow-status` skill](#cursor-skills) will run the script for you and surface the value.)
+
+2. **Buy at the pricing page.** Visit [www.getaxonflow.com/pricing](https://www.getaxonflow.com/pricing/) and click **Buy Plugin Pro — $9.99**. At Stripe Checkout, paste your `tenant_id` into the **AxonFlow tenant ID** custom field.
+
+3. **Install the issued license token.** After checkout you'll receive an `AXON-...` token by email. The plugin forwards it as the `X-License-Token` header on every governed agent call once it's loaded. Two ways to load it (token-resolution order described below):
 
 The plugin reads the token in this order — first match wins:
 
