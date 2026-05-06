@@ -48,7 +48,7 @@ fi
 CONFIG_DIR="${AXONFLOW_CONFIG_DIR:-${HOME}/.config/axonflow}"
 REGISTRATION_FILE="${CONFIG_DIR}/try-registration.json"
 LICENSE_TOKEN_FILE="${CONFIG_DIR}/license-token"
-UPGRADE_URL="${AXONFLOW_UPGRADE_URL:-https://getaxonflow.com/pro}"
+UPGRADE_URL="${AXONFLOW_UPGRADE_URL:-https://getaxonflow.com/pricing/}"
 
 # tenant_id from try-registration.json. Falls back to a clear hint when
 # missing so the buyer knows what to do (most paths auto-register on the

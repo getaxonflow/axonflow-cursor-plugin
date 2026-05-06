@@ -24,7 +24,7 @@ request via `mcp.json`'s `headers` field.
   The status output's `tier` line parses the JWT `exp` claim from the
   configured Pro license token and renders one of three shapes: `Pro
   (expires YYYY-MM-DD, N days remaining)` when active, `Free (Pro
-  expired YYYY-MM-DD — visit https://getaxonflow.com/pro to renew)`
+  expired YYYY-MM-DD — visit https://getaxonflow.com/pricing/ to renew)`
   when the token is on disk but its `exp` has passed (plugin will not
   forward an expired token), or `Free (no Pro license configured)`
   when no token is loaded. Lets users see their renewal date without
@@ -59,6 +59,10 @@ request via `mcp.json`'s `headers` field.
   next governed tool call. The `/recover-credentials` skill instructs the
   agent to invoke the script via the Shell tool when the user reports
   lost free-tier credentials.
+
+### Fixed
+
+- **Upgrade-pointer URL aligned with the canonical pricing page.** `AXONFLOW_UPGRADE_URL` default (the URL surfaced by `scripts/status.sh` and the `axonflow-status` skill to free-tier users, plus embedded in the `tier   Free (Pro expired ... — visit ... to renew)` line) is now `https://getaxonflow.com/pricing/`. The previous default `https://getaxonflow.com/pro` returned 404 — that page was referenced in PRDs but never built. The pricing page already resolves and carries the Plugin Pro $9.99 tier card with the Stripe buy button, so plugin status output now points free-tier users at a working URL. Override via `AXONFLOW_UPGRADE_URL` env var if needed. Same fix landed in companion plugin releases (openclaw-plugin v2.2.0, claude-plugin v1.2.0, codex-plugin v1.2.0).
 
 ## [1.1.0] - 2026-05-04 — 4 read-side governance skills
 
