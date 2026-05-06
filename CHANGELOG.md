@@ -24,7 +24,7 @@ request via `mcp.json`'s `headers` field.
   The status output's `tier` line parses the JWT `exp` claim from the
   configured Pro license token and renders one of three shapes: `Pro
   (expires YYYY-MM-DD, N days remaining)` when active, `Free (Pro
-  expired YYYY-MM-DD — visit https://www.getaxonflow.com/pricing/ to renew)`
+  expired YYYY-MM-DD — visit https://getaxonflow.com/pricing/ to renew)`
   when the token is on disk but its `exp` has passed (plugin will not
   forward an expired token), or `Free (no Pro license configured)`
   when no token is loaded. Lets users see their renewal date without

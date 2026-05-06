@@ -249,7 +249,7 @@ export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
 
 ### Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
 
-Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day) to **30-day retention** and **1,000 events / day** for a 90-day window. One-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [www.getaxonflow.com/pricing](https://www.getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
+Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day) to **30-day retention** and **1,000 events / day** for a 90-day window. One-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
 
 To activate Pro on this Cursor install:
 
@@ -262,7 +262,7 @@ To activate Pro on this Cursor install:
 
     The output includes a `tenant_id   cs_<uuid>` line — that's the value Stripe Checkout needs. Copy it. (Or ask the agent in chat: "what is my AxonFlow tenant ID?" — the [`axonflow-status` skill](#cursor-skills) will run the script for you and surface the value.)
 
-2. **Buy at the pricing page.** Visit [www.getaxonflow.com/pricing](https://www.getaxonflow.com/pricing/) and click **Buy Plugin Pro — $9.99**. At Stripe Checkout, paste your `tenant_id` into the **AxonFlow tenant ID** custom field.
+2. **Buy at the pricing page.** Visit [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) and click **Buy Plugin Pro — $9.99**. At Stripe Checkout, paste your `tenant_id` into the **AxonFlow tenant ID** custom field.
 
 3. **Install the issued license token.** After checkout you'll receive an `AXON-...` token by email. The plugin forwards it as the `X-License-Token` header on every governed agent call once it's loaded. Two ways to load it (token-resolution order described below):
 
@@ -281,7 +281,7 @@ The free / community tier behaviour is unchanged when no token is set — the pl
 
 ### Check status (`scripts/status.sh`)
 
-Need your `tenant_id` (to paste into the Stripe Checkout custom field at `https://www.getaxonflow.com/pricing/`)? Want to confirm whether your Pro license token is loaded? Run:
+Need your `tenant_id` (to paste into the Stripe Checkout custom field at `https://getaxonflow.com/pricing/`)? Want to confirm whether your Pro license token is loaded? Run:
 
 ```bash
 cd ~/.cursor/plugins/local/axonflow-cursor-plugin
@@ -299,10 +299,10 @@ AxonFlow Cursor plugin — status
   registration file  /home/you/.config/axonflow/try-registration.json
   license token      unset
   tier               Free
-  upgrade            https://www.getaxonflow.com/pricing/
+  upgrade            https://getaxonflow.com/pricing/
 
 To upgrade to Pro, copy your tenant_id above, visit
-https://www.getaxonflow.com/pricing/, paste the tenant_id into the "Your AxonFlow tenant ID"
+https://getaxonflow.com/pricing/, paste the tenant_id into the "Your AxonFlow tenant ID"
 field, and complete checkout. ...
 ```
 
