@@ -60,6 +60,10 @@ request via `mcp.json`'s `headers` field.
   agent to invoke the script via the Shell tool when the user reports
   lost free-tier credentials.
 
+### Fixed
+
+- **Upgrade-pointer URL aligned with the canonical pricing page.** `AXONFLOW_UPGRADE_URL` default (the URL surfaced by `scripts/status.sh` and the `axonflow-status` skill to free-tier users, plus embedded in the `tier   Free (Pro expired ... — visit ... to renew)` line) is now `https://getaxonflow.com/pricing/`. The previous default `https://getaxonflow.com/pro` returned 404 — that page was referenced in PRDs but never built. The pricing page already resolves and carries the Plugin Pro $9.99 tier card with the Stripe buy button, so plugin status output now points free-tier users at a working URL. Override via `AXONFLOW_UPGRADE_URL` env var if needed. Same fix landed in companion plugin releases (openclaw-plugin v2.2.0, claude-plugin v1.2.0, codex-plugin v1.2.0).
+
 ## [1.1.0] - 2026-05-04 — 4 read-side governance skills
 
 ### Added
