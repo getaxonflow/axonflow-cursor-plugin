@@ -249,7 +249,11 @@ export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
 
 ### Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
 
-Buyers who completed Stripe Checkout for the Pro tier receive an `AXON-`-prefixed license token by email. The plugin forwards it as the `X-License-Token` header on every governed agent call so the request joins the Pro tier (extended audit retention, higher quotas, plugin-claimed entitlements).
+Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day) to **30-day retention** and **1,000 events / day** for a 90-day window. One-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [www.getaxonflow.com/pricing](https://www.getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
+
+To upgrade: run `bash scripts/status.sh` (next section) to surface your `cs_<uuid>` tenant ID, then visit [www.getaxonflow.com/pricing](https://www.getaxonflow.com/pricing/) and paste it into the **AxonFlow tenant ID** custom field at Stripe Checkout.
+
+Buyers who completed Stripe Checkout receive an `AXON-`-prefixed license token by email. The plugin forwards it as the `X-License-Token` header on every governed agent call so the request joins the Pro tier (extended audit retention, higher quotas, plugin-claimed entitlements).
 
 The plugin reads the token in this order — first match wins:
 
@@ -266,7 +270,7 @@ The free / community tier behaviour is unchanged when no token is set — the pl
 
 ### Check status (`scripts/status.sh`)
 
-Need your `tenant_id` (to paste into the Stripe Checkout custom field at `https://getaxonflow.com/pro`)? Want to confirm whether your Pro license token is loaded? Run:
+Need your `tenant_id` (to paste into the Stripe Checkout custom field at `https://www.getaxonflow.com/pricing/`)? Want to confirm whether your Pro license token is loaded? Run:
 
 ```bash
 cd ~/.cursor/plugins/local/axonflow-cursor-plugin
@@ -284,10 +288,10 @@ AxonFlow Cursor plugin — status
   registration file  /home/you/.config/axonflow/try-registration.json
   license token      unset
   tier               Free
-  upgrade            https://getaxonflow.com/pro
+  upgrade            https://www.getaxonflow.com/pricing/
 
 To upgrade to Pro, copy your tenant_id above, visit
-https://getaxonflow.com/pro, paste the tenant_id into the "Your AxonFlow tenant ID"
+https://www.getaxonflow.com/pricing/, paste the tenant_id into the "Your AxonFlow tenant ID"
 field, and complete checkout. ...
 ```
 
