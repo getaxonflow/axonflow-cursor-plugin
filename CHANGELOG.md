@@ -2,37 +2,11 @@
 
 ## [Unreleased]
 
-### Changed
-
-- **`axonflow-status` skill — prefer the local `scripts/status.sh` over
-  the MCP tool** for tenant_id / tier queries. The local script reads
-  state directly and answers without an agent round-trip. Faster, works
-  offline, and works exactly when the user typically asks ("the agent
-  isn't reachable, what's my tenant ID for Stripe Checkout?"). The MCP
-  tool stays as a documented fallback for the rare cases where
-  server-truth matters (revocation, clock skew, server-side overrides).
-  Same flip applied to claude / codex sister plugins.
-
-### Internal
-
-- `tests/test-skill-status-prefers-local.sh` — 4 content assertions
-  locking the preference in. Wired into `.github/workflows/test.yml`.
-  Per `feedback_cursor_agent_cli_is_not_cursor_ide.md`, the
-  cursor-agent CLI does not load IDE plugins, so a CLI-driven runtime
-  proof of the SKILL flip is not feasible without an operator-led
-  Cursor IDE walk-through. The sister `axonflow-claude-plugin` PR
-  ships a real `claude` CLI runtime-e2e that drives the equivalent
-  skill flip end-to-end and proves the wording change actually
-  changes downstream LLM behaviour — the captured EVIDENCE there is
-  the reference proof for this lane.
-
 ## [1.3.0] - 2026-05-07 — V1 Plugin Pro upgrade-prompt envelope + 5 new MCP tools surfaced
 
-Companion plugin release to platform v7.7.0 + agent PRs #1966 / #1968. Surfaces
-the V1 Plugin Pro structured upgrade envelope to the operator and documents
-the 5 new agent-callable MCP tools (closing umbrella
-axonflow-enterprise#1958 cross-plugin surfacing, sub-issue
-axonflow-enterprise#1963).
+Companion plugin release to AxonFlow agent v7.7.0. Surfaces the V1
+Plugin Pro structured upgrade envelope to the operator on Community
+SaaS rate-limit hits and documents 5 new agent-callable MCP tools.
 
 ### Added
 
@@ -67,15 +41,30 @@ axonflow-enterprise#1963).
   unlimited HITL approvals, and the LLM cost pre-flight feature added.
 - **README MCP-tools section** renumbered from "10 MCP tools" to "15 MCP
   tools" to include the new V1 Pro tier-identity / tier-capability tools.
+- **`axonflow-status` skill — prefer the local `scripts/status.sh` over
+  the MCP tool** for tenant_id / tier queries. The local script reads
+  state directly and answers without an agent round-trip. Faster, works
+  offline, and works exactly when the user typically asks ("the agent
+  isn't reachable, what's my tenant ID for Stripe Checkout?"). The MCP
+  tool stays as a documented fallback for the rare cases where
+  server-truth matters (revocation, clock skew, server-side overrides).
+  Same flip applied to claude / codex sister plugins.
 
 ### Internal
 
-- Added `runtime-e2e/v1_pro_envelope_surface/` per HARD RULE #0 — drives
-  a fresh Free-tier tenant past the 200/day cap on `try.getaxonflow.com`,
-  asserts the plugin's envelope helper prints the locked V1 wording to
-  stderr and stamps a throttle deadline.
-- Added `tests/test-upgrade-prompt.sh` — 21 unit assertions across 8
+- `runtime-e2e/v1_pro_envelope_surface/` — drives a fresh Free-tier
+  tenant past the 200/day cap on `try.getaxonflow.com`, asserts the
+  plugin's envelope helper prints the locked V1 wording to stderr
+  and stamps a throttle deadline.
+- `tests/test-upgrade-prompt.sh` — 21 unit assertions across 8
   scenarios for every branch of the envelope handler.
+- `tests/test-skill-status-prefers-local.sh` — 4 content assertions
+  locking the local-first SKILL.md ordering in; wired into
+  `.github/workflows/test.yml`. The cursor-agent CLI is a separate
+  runtime from Cursor IDE and does not load IDE plugins, so the
+  end-to-end runtime proof for the skill flip lives in the sister
+  `axonflow-claude-plugin` test (the wording change is structurally
+  identical across plugins).
 
 ## [1.2.0] - 2026-05-06 — V1 paid Pro tier wire-up + X-Axonflow-Client header
 
