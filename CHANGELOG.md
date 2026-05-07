@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`list-recent-decisions` skill** — V1.1 (axonflow-enterprise#1982). Cursor agents in Composer/Agent mode can drive the new `list_recent_decisions` MCP tool to surface "what just got blocked" UX, appeal flows, and decision-history forensics. Tier-throttled per the platform's Free/Pro window+limit; the skill explicitly instructs the LLM to render the V1 upgrade envelope verbatim on cap-hit.
+- `runtime-e2e/list-recent-decisions/` — manual-runbook gate (Cursor's CLI is window-management only). Wire-level baseline EVIDENCE.md captured against the live stack; IDE-driven proof produced by an operator before release tagging.
+- `tests/e2e/runtime-mcp-tools.sh` extended with a 7th scenario: `list_recent_decisions` over-cap returns the wrapped V1 envelope with `upgrade.buy_url` (locks in `feedback_429_no_upgrade_hint_is_conversion_gap.md` at the wire level).
+
+### Fixed
+
+- `tests/test-hooks.sh` skill-count assertion 12 → 13 to include the new `list-recent-decisions` skill.
+
 ## [1.3.0] - 2026-05-07 — V1 Plugin Pro upgrade-prompt envelope + 5 new MCP tools surfaced
 
 Companion plugin release to AxonFlow agent v7.7.0. Surfaces the V1
