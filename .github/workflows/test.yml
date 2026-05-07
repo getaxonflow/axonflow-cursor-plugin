@@ -39,5 +39,8 @@ jobs:
       - name: Run hook regression tests (mock server)
         run: bash tests/test-hooks.sh
 
+      - name: Run upgrade-prompt envelope-handler unit tests
+        run: bash tests/test-upgrade-prompt.sh
+
       - name: Run V1 paid-tier wireup runtime test (X-License-Token + recovery)
         run: bash tests/e2e/runtime-license-token-and-recovery.sh

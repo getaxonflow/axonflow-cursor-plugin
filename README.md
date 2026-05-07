@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-> **→ Full integration walkthrough:** **[docs.getaxonflow.com/docs/integration/cursor](https://docs.getaxonflow.com/docs/integration/cursor/)** — architecture, policy examples, latency numbers, troubleshooting, and the 10 MCP tools the platform exposes.
+> **→ Full integration walkthrough:** **[docs.getaxonflow.com/docs/integration/cursor](https://docs.getaxonflow.com/docs/integration/cursor/)** — architecture, policy examples, latency numbers, troubleshooting, and the 15 MCP tools the platform exposes.
 
 > **Upgrade strongly recommended.** AxonFlow ships substantial monthly security and quality hardening; staying on the latest major is the security-supported release line. [Latest release](https://github.com/getaxonflow/axonflow-cursor-plugin/releases/latest) · [Security advisories](https://github.com/getaxonflow/axonflow-cursor-plugin/security/advisories)
 
@@ -249,7 +249,7 @@ export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
 
 ### Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
 
-Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day) to **30-day retention** and **1,000 events / day** for a 90-day window. One-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
+Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day, 2 active custom policies, 1 HITL approval per rolling 7d) to **30-day retention**, **2,000 events / day**, **unlimited active custom policies**, **unlimited HITL approvals**, and adds the **LLM cost pre-flight** tool (estimate token cost for a multi-step plan before it runs). 90-day window, one-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
 
 To activate Pro on this Cursor install:
 
@@ -317,6 +317,19 @@ The license token is **always** redacted to its last 4 chars. The full token is 
 
 In the chat, use the `/axonflow-status` skill to have the agent run this for you and surface the `tenant_id` and tier.
 
+> **Tip:** the same information is available without spawning a shell — just ask the agent "what's my AxonFlow tenant ID?" and it will call the agent-side `axonflow_get_tenant_id` MCP tool, which returns `tenant_id`, the server-resolved tier, and the upgrade URLs. Other agent-callable Pro-related tools include `axonflow_list_pro_features` ("what would I get if I upgraded?") and `axonflow_get_cost_estimate` (Pro-only LLM cost pre-flight). Auto-discovered via the existing MCP HTTP transport — no extra wiring.
+
+### Free-tier limits and upgrade prompts
+
+When the plugin's hooks hit a Free-tier cap (200 events/day, 2 active custom policies, 1 HITL approval per rolling 7d, or a Pro-only feature), the agent returns a structured upgrade envelope. The plugin parses it and prints a single-line nudge to stderr — visible in Cursor's hook log:
+
+```
+[AxonFlow] Daily limit reached on Free tier (200 events). Pro raises this to 2,000/day. Resets at midnight UTC.
+[AxonFlow] Upgrade: https://buy.stripe.com/bJe28qbztcdVchjdkw8k800
+```
+
+The plugin also stamps a local back-off file from the response's `Retry-After` header so subsequent governed calls fall through immediately (no thundering herd against the agent) until the cap clears. The upgrade nudge is shown at most once per UTC day so it doesn't spam every hook.
+
 ### Recovering lost credentials (`scripts/recover-credentials.sh`)
 
 If you lose your `~/.config/axonflow/try-registration.json` (deleted by mistake, switched machines, hit the unsafe-permissions guard, etc.), run the recovery helper from the plugin install directory:
@@ -352,9 +365,9 @@ Custom policies are easy — `POST /api/v1/dynamic-policies` or the Customer Por
 
 ---
 
-## The 10 MCP tools Cursor can call
+## The 15 MCP tools Cursor can call
 
-Beyond automatic hooks, the agent's MCP server exposes **10 tools** Cursor can invoke directly. All served by the platform at `/api/v1/mcp-server` — the plugin's `mcp.json` just points Cursor there.
+Beyond automatic hooks, the agent's MCP server exposes **15 tools** Cursor can invoke directly. All served by the platform at `/api/v1/mcp-server` — the plugin's `mcp.json` just points Cursor there. New platform tools are auto-discovered via the existing MCP HTTP transport.
 
 ### Governance (6)
 
@@ -376,7 +389,32 @@ Beyond automatic hooks, the agent's MCP server exposes **10 tools** Cursor can i
 | `delete_override` | Revoke an active session override |
 | `list_overrides` | List active overrides scoped to the caller's tenant |
 
+### Tenant identity & tier capability (5 — V1 Plugin Pro)
+
+| Tool | Free access | Pro access |
+|------|-------------|------------|
+| `axonflow_get_tenant_id` | Visible + callable — returns tenant_id, server-resolved tier, upgrade URL | Same |
+| `axonflow_list_pro_features` | Visible + callable — locked Pro feature list (5 differentiators + $9.99 / 90-day pricing) | Same |
+| `axonflow_request_approval` | Visible + 1 per rolling 7d | Unlimited |
+| `axonflow_create_tenant_policy` | Visible + 2 active max | Unlimited |
+| `axonflow_get_cost_estimate` | Filtered out of `tools/list` — Pro-only | Visible + callable |
+
+When a Free-tier cap is hit on these tools, the agent returns a structured upgrade envelope (same shape as the 429 daily-quota envelope) and the plugin surfaces the upgrade prompt to stderr — see [Free-tier limits and upgrade prompts](#free-tier-limits-and-upgrade-prompts).
+
 See [Session Overrides](https://docs.getaxonflow.com/docs/governance/overrides/).
+
+---
+
+## Free-tier limits and upgrade prompts
+
+When the plugin's hooks hit a Free-tier cap (200 events/day, 2 active custom policies, 1 HITL approval per rolling 7d, or a Pro-only feature), the agent returns a structured upgrade envelope. The plugin parses it and prints a single-line nudge to stderr — for example:
+
+```
+[AxonFlow] Daily limit reached on Free tier (200 events). Pro raises this to 2,000/day. Resets at midnight UTC.
+[AxonFlow] Upgrade: https://buy.stripe.com/bJe28qbztcdVchjdkw8k800
+```
+
+The plugin also stamps a local back-off file from the response's `Retry-After` header so subsequent governed calls fall through immediately (no thundering herd against the agent) until the cap clears. The upgrade nudge is shown at most once per UTC day so it doesn't spam every hook.
 
 ---
 
@@ -406,7 +444,7 @@ Imperceptible in an IDE session.
 
 ## Sister integrations
 
-Same governance platform, same 80+ policies, same 10 MCP tools — different agent hosts:
+Same governance platform, same 80+ policies, same 15 MCP tools — different agent hosts:
 
 | Integration | Repo | Docs |
 |---|---|---|
