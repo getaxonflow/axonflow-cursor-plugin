@@ -1,1 +1,0 @@
-{"jsonrpc":"2.0","id":99,"result":{"content":[{"type":"text","text":"{\n  \"approval_id\": \"9\",\n  \"message\": \"Approval request created. The user must approve via the AxonFlow customer portal before the operation can proceed.\",\n  \"original_query\": \"runtime-e2e probe\",\n  \"request_type\": \"shell_command\",\n  \"severity\": \"low\",\n  \"status\": \"pending\"\n}"}]}}

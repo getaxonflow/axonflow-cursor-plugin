@@ -183,6 +183,10 @@ echo
 echo "================ tool 1: axonflow_list_pro_features ================"
 call_tool "axonflow_list_pro_features" "{}"
 LIST_BODY=$(jq -r '.result.content[0].text // empty' "$EVIDENCE/axonflow_list_pro_features.json")
+LIST_SUCCESS=$(echo "$LIST_BODY" | jq -r '.success // empty' 2>/dev/null)
+if [ "$LIST_SUCCESS" != "true" ]; then
+  fail "axonflow_list_pro_features: missing 'success: true' (axonflow-enterprise#1989)"
+fi
 if ! echo "$LIST_BODY" | grep -qF 'differentiators'; then
   fail "axonflow_list_pro_features: missing 'differentiators'"
 fi
@@ -194,7 +198,7 @@ PRICE=$(echo "$LIST_BODY" | jq -r '.pricing.price_usd // empty' 2>/dev/null)
 if [ "$PRICE" != "9.99" ]; then
   fail "axonflow_list_pro_features: pricing.price_usd = '$PRICE' (want 9.99)"
 fi
-[ "$PASS" = "true" ] && echo "  axonflow_list_pro_features: 5 differentiators + 9.99 ✓"
+[ "$PASS" = "true" ] && echo "  axonflow_list_pro_features: success:true + 5 differentiators + 9.99 ✓"
 
 # Test 2 — get_cost_estimate (Pro-only)
 # Two-part assertion:
@@ -231,13 +235,21 @@ call_tool "axonflow_request_approval" '{"original_query":"runtime-e2e probe","re
 RA_BODY=$(jq -r '.result.content[0].text // empty' "$EVIDENCE/axonflow_request_approval.json")
 RA_IS_ERR=$(jq -r '.result.isError // false' "$EVIDENCE/axonflow_request_approval.json")
 RA_ID=$(echo "$RA_BODY" | jq -r '.approval_id // empty' 2>/dev/null)
+RA_SUCCESS=$(echo "$RA_BODY" | jq -r '.success // empty' 2>/dev/null)
+RA_SUBMITTED=$(echo "$RA_BODY" | jq -r '.submitted // empty' 2>/dev/null)
 if [ "$RA_IS_ERR" = "true" ]; then
   fail "axonflow_request_approval: isError = true on first Free call"
   echo "$RA_BODY" | head -10 | sed 's/^/    /'
 elif [ -z "$RA_ID" ] || [ "$RA_ID" = "null" ]; then
   fail "axonflow_request_approval: missing approval_id on first Free call"
 else
-  echo "  axonflow_request_approval: approval_id=$RA_ID ✓"
+  if [ "$RA_SUCCESS" != "true" ]; then
+    fail "axonflow_request_approval: missing 'success: true' (axonflow-enterprise#1989)"
+  fi
+  if [ "$RA_SUBMITTED" != "true" ]; then
+    fail "axonflow_request_approval: missing 'submitted: true' (axonflow-enterprise#1989)"
+  fi
+  echo "  axonflow_request_approval: success:true + submitted:true + approval_id=$RA_ID ✓"
 fi
 
 # Test 4 — create_tenant_policy (Free 2-active, expect policy_id)
@@ -247,13 +259,21 @@ call_tool "axonflow_create_tenant_policy" "{\"name\":\"runtime-e2e-cursor-${UTC_
 CP_BODY=$(jq -r '.result.content[0].text // empty' "$EVIDENCE/axonflow_create_tenant_policy.json")
 CP_IS_ERR=$(jq -r '.result.isError // false' "$EVIDENCE/axonflow_create_tenant_policy.json")
 CP_ID=$(echo "$CP_BODY" | jq -r '.policy_id // empty' 2>/dev/null)
+CP_SUCCESS=$(echo "$CP_BODY" | jq -r '.success // empty' 2>/dev/null)
+CP_CREATED=$(echo "$CP_BODY" | jq -r '.created // empty' 2>/dev/null)
 if [ "$CP_IS_ERR" = "true" ]; then
   fail "axonflow_create_tenant_policy: isError = true on first Free call"
   echo "$CP_BODY" | head -10 | sed 's/^/    /'
 elif [ -z "$CP_ID" ] || [ "$CP_ID" = "null" ]; then
   fail "axonflow_create_tenant_policy: missing policy_id"
 else
-  echo "  axonflow_create_tenant_policy: policy_id=$CP_ID ✓"
+  if [ "$CP_SUCCESS" != "true" ]; then
+    fail "axonflow_create_tenant_policy: missing 'success: true' (axonflow-enterprise#1989)"
+  fi
+  if [ "$CP_CREATED" != "true" ]; then
+    fail "axonflow_create_tenant_policy: missing 'created: true' (axonflow-enterprise#1989)"
+  fi
+  echo "  axonflow_create_tenant_policy: success:true + created:true + policy_id=$CP_ID ✓"
 fi
 
 # Test 5 — get_tenant_id (Free callable, must include tenant_id + upgrade_url)
@@ -263,6 +283,10 @@ call_tool "axonflow_get_tenant_id" "{}"
 GT_BODY=$(jq -r '.result.content[0].text // empty' "$EVIDENCE/axonflow_get_tenant_id.json")
 GT_TENANT=$(echo "$GT_BODY" | jq -r '.tenant_id // empty' 2>/dev/null)
 GT_UPGRADE=$(echo "$GT_BODY" | jq -r '.upgrade_url // empty' 2>/dev/null)
+GT_SUCCESS=$(echo "$GT_BODY" | jq -r '.success // empty' 2>/dev/null)
+if [ "$GT_SUCCESS" != "true" ]; then
+  fail "axonflow_get_tenant_id: missing 'success: true' (axonflow-enterprise#1989)"
+fi
 if [ "$GT_TENANT" != "$TENANT" ]; then
   fail "axonflow_get_tenant_id: tenant_id='$GT_TENANT' (want '$TENANT')"
 fi

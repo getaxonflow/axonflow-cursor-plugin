@@ -1,1 +1,0 @@
-{"jsonrpc":"2.0","id":99,"result":{"content":[{"type":"text","text":"{\n  \"buy_url\": \"https://buy.stripe.com/bJe28qbztcdVchjdkw8k800\",\n  \"tenant_id\": \"cs_bfe55bf1-1e64-4264-966c-f162da7b85ae\",\n  \"tier\": \"Free\",\n  \"upgrade_url\": \"https://getaxonflow.com/pricing/\"\n}"}]}}
