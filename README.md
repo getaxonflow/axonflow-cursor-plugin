@@ -247,7 +247,7 @@ export AXONFLOW_ENDPOINT=https://your-axonflow.example.com
 export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
 ```
 
-### Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
+## Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
 
 Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day, 2 active custom policies, 1 HITL approval per rolling 7d) to **30-day retention**, **2,000 events / day**, **unlimited active custom policies**, **unlimited HITL approvals**, and adds the **LLM cost pre-flight** tool (estimate token cost for a multi-step plan before it runs). 90-day window, one-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
 
