@@ -4,7 +4,7 @@
       "type": "http",
       "url": "${AXONFLOW_ENDPOINT:-http://localhost:8080}/api/v1/mcp-server",
       "headers": {
-        "X-Axonflow-Client": "cursor-plugin/1.1.0",
+        "X-Axonflow-Client": "cursor-plugin/1.3.0",
         "X-License-Token": "${AXONFLOW_LICENSE_TOKEN}"
       }
     }
