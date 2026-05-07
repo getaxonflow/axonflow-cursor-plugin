@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`axonflow-status` skill — prefer the local `scripts/status.sh` over
+  the MCP tool** for tenant_id / tier queries. The local script reads
+  state directly and answers without an agent round-trip. Faster, works
+  offline, and works exactly when the user typically asks ("the agent
+  isn't reachable, what's my tenant ID for Stripe Checkout?"). The MCP
+  tool stays as a documented fallback for the rare cases where
+  server-truth matters (revocation, clock skew, server-side overrides).
+  Same flip applied to claude / codex sister plugins.
+
+### Internal
+
+- `tests/test-skill-status-prefers-local.sh` — 4 content assertions
+  locking the preference in. Wired into `.github/workflows/test.yml`.
+  Per `feedback_cursor_agent_cli_is_not_cursor_ide.md`, the
+  cursor-agent CLI does not load IDE plugins, so a CLI-driven runtime
+  proof of the SKILL flip is not feasible without an operator-led
+  Cursor IDE walk-through. The sister `axonflow-claude-plugin` PR
+  ships a real `claude` CLI runtime-e2e that drives the equivalent
+  skill flip end-to-end and proves the wording change actually
+  changes downstream LLM behaviour — the captured EVIDENCE there is
+  the reference proof for this lane.
+
 ## [1.3.0] - 2026-05-07 — V1 Plugin Pro upgrade-prompt envelope + 5 new MCP tools surfaced
 
 Companion plugin release to platform v7.7.0 + agent PRs #1966 / #1968. Surfaces
