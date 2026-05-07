@@ -1,0 +1,6 @@
+
+Cursor V1 Plugin Pro MCP-tools-invocable runtime proof — 20260507T144252Z
+AGENT_URL=https://try.getaxonflow.com
+X-Axonflow-Client=cursor-plugin/1.3.0
+TENANT=cs_bfe55bf1-1e64-4264-966c-f162da7b85ae
+Result: PASS
