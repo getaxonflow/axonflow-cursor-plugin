@@ -2,11 +2,18 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-08
+
 ### Added
 
-- **`list-recent-decisions` skill** — V1.1 (axonflow-enterprise#1982). Cursor agents in Composer/Agent mode can drive the new `list_recent_decisions` MCP tool to surface "what just got blocked" UX, appeal flows, and decision-history forensics. Tier-throttled per the platform's Free/Pro window+limit; the skill explicitly instructs the LLM to render the V1 upgrade envelope verbatim on cap-hit.
-- `runtime-e2e/list-recent-decisions/` — manual-runbook gate (Cursor's CLI is window-management only). Wire-level baseline EVIDENCE.md captured against the live stack; IDE-driven proof produced by an operator before release tagging.
-- `tests/e2e/runtime-mcp-tools.sh` extended with a 7th scenario: `list_recent_decisions` over-cap returns the wrapped V1 envelope with `upgrade.buy_url` (locks in `feedback_429_no_upgrade_hint_is_conversion_gap.md` at the wire level).
+- **V1.1 `list-recent-decisions` skill** (axonflow-enterprise#1982). Drives the new MCP tool from Composer/Agent mode; Free-tier cap-hits render the V1 upgrade envelope verbatim. Plus `runtime-e2e/list-recent-decisions/` (manual-runbook gate, wire baseline captured) and a 7th over-cap scenario in `tests/e2e/runtime-mcp-tools.sh`.
+- **v1 telemetry-schema** (axonflow-enterprise#2008): heartbeat now emits `telemetry_type: "plugin"`, `endpoint_type` (`localhost | private_network | remote | unknown`), and `profile` from `AXONFLOW_PROFILE`.
+- `AXONFLOW_PROFILE` env var: drives the new `profile` payload field; reports `unknown` when unset.
+- `AXONFLOW_TRY=1` env var: forces `deployment_mode=community_saas` for tenants behind custom hostnames proxying try.getaxonflow.com.
+
+### Changed
+
+- `deployment_mode` allowlist normalised to `self_hosted | community_saas | unknown` (was `production`/`development`/`community-saas`). Detection now derives from endpoint host + `AXONFLOW_TRY=1`. Analytics queries on the legacy values must update.
 
 ### Fixed
 
