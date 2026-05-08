@@ -1,0 +1,5 @@
+2026/05/08 12:17:59 [MCP-Server] → initialize (id=0, session=)
+2026/05/08 12:17:59 [MCP-Server] Session created: axonflow-200c734a8df88212ed31f563 (tenant=community, client=community)
+2026/05/08 12:17:59 [MCP-Server] Client: cursor-vscode 1.0.0
+2026/05/08 12:17:59 [MCP-Server] → tools/list (id=1, session=axonflow-200c734a8df88212ed31f563)
+2026/05/08 12:32:30 [MCP-Server] → tools/call (id=4, session=axonflow-200c734a8df88212ed31f563)
