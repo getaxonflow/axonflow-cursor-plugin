@@ -626,14 +626,15 @@ PII_ALLOWED_COUNT=$(grep -c 'PII_ALLOWED' "$PLUGIN_DIR/scripts/pre-tool-check.sh
 assert_eq "No PII_ALLOWED references" "0" "$PII_ALLOWED_COUNT"
 
 echo ""
-echo "--- Static: skills directory has 12 skills ---"
+echo "--- Static: skills directory has 13 skills ---"
 # 6 original (audit-search, check-governance, governance-status, pii-scan,
 # policy-list, policy-stats) + 4 W2 read-side governance skills
 # (explain-decision, list-overrides, create-override, revoke-override) +
 # 1 W4 v1-paid-tier skill (recover-credentials) + 1 V1 paid status surface
-# (axonflow-status — tenant_id + tier for Stripe Pro upgrade aid).
+# (axonflow-status — tenant_id + tier for Stripe Pro upgrade aid) +
+# 1 V1.1 list-recent-decisions skill (#1982).
 SKILL_COUNT=$(find "$PLUGIN_DIR/skills" -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-assert_eq "12 skills present" "12" "$SKILL_COUNT"
+assert_eq "13 skills present" "13" "$SKILL_COUNT"
 
 echo ""
 echo "--- Static: shell write regex handles single quotes ---"
