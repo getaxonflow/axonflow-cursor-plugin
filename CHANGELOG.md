@@ -114,7 +114,7 @@ request via `mcp.json`'s `headers` field.
  the `tenant_id` (which Pro buyers paste into the custom field at Stripe
  Checkout), the active tier (`Free` or `Pro`), the agent endpoint, the
  config / token file paths, and the upgrade URL. The license token is
- redacted to last-4 chars (`AXON-.XXXX`) so the output is safe to
+ redacted to last-4 chars (`AXON-...XXXX`) so the output is safe to
  screen-share or paste into a support ticket. Resolution mirrors
  `pre-tool-check.sh`: env first, then `~/.config/axonflow/license-token`
  (mode `0600` only — looser permissions are reported but not consumed).
@@ -141,7 +141,7 @@ request via `mcp.json`'s `headers` field.
 
 ### Fixed
 
-- **Upgrade-pointer URL aligned with the canonical pricing page.** `AXONFLOW_UPGRADE_URL` default (the URL surfaced by `scripts/status.sh` and the `axonflow-status` skill to free-tier users, plus embedded in the `tier Free (Pro expired. — visit. to renew)` line) is now `https://getaxonflow.com/pricing/`. The previous default `https://getaxonflow.com/pro` returned 404 — that page was referenced in PRDs but never built. The pricing page already resolves and carries the Plugin Pro $9.99 tier card with the Stripe buy button, so plugin status output now points free-tier users at a working URL. Override via `AXONFLOW_UPGRADE_URL` env var if needed. Same fix landed in companion plugin releases (openclaw-plugin v2.2.0, claude-plugin v1.2.0, codex-plugin v1.2.0).
+- **Upgrade-pointer URL aligned with the canonical pricing page.** `AXONFLOW_UPGRADE_URL` default (the URL surfaced by `scripts/status.sh` and the `axonflow-status` skill to free-tier users, plus embedded in the `tier Free (Pro expired ... — visit ... to renew)` line) is now `https://getaxonflow.com/pricing/`. The previous default `https://getaxonflow.com/pro` returned 404 — that page was referenced in PRDs but never built. The pricing page already resolves and carries the Plugin Pro $9.99 tier card with the Stripe buy button, so plugin status output now points free-tier users at a working URL. Override via `AXONFLOW_UPGRADE_URL` env var if needed. Same fix landed in companion plugin releases (openclaw-plugin v2.2.0, claude-plugin v1.2.0, codex-plugin v1.2.0).
 
 ## [1.1.0] - 2026-05-04 — 4 read-side governance skills
 
@@ -166,7 +166,7 @@ The full set of platform-side security fixes shipped alongside this release — 
 
 **Reliability and bug-fix highlights:**
 - **7-day delivered-heartbeat with stamp-on-success** (this release). Telemetry stamp advances only after the POST returns 2xx, so a transient network failure no longer silences telemetry until the next 7-day window. Concurrent invocations are de-duplicated by an in-flight gate.
-- **Mode-clarity canary log line** on every hook init (this release). Stderr emits `[AxonFlow] Connected to AxonFlow at <URL> (mode=.)` and a PR-blocking CI gate asserts the canary matches the actual outbound destination, guarding against silent endpoint drift.
+- **Mode-clarity canary log line** on every hook init (this release). Stderr emits `[AxonFlow] Connected to AxonFlow at <URL> (mode=...)` and a PR-blocking CI gate asserts the canary matches the actual outbound destination, guarding against silent endpoint drift.
 - **PR-blocking install-to-use smoke against the live community stack** (this release). Catches plugin-side regressions against `try.getaxonflow.com` before they reach a user's terminal.
 
 ### BREAKING
