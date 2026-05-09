@@ -2,11 +2,11 @@
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-05-08
+## [1.4.0] - 2026-05-09
 
 ### Added
 
-- **V1.1 `list-recent-decisions` skill** (axonflow-enterprise#1982). Drives the new MCP tool from Composer/Agent mode; Free-tier cap-hits render the V1 upgrade envelope verbatim. Plus `runtime-e2e/list-recent-decisions/` (manual-runbook gate, wire baseline captured) and a 7th over-cap scenario in `tests/e2e/runtime-mcp-tools.sh`.
+- **V1.1 `list-recent-decisions` skill**. Drives the new MCP tool from Composer/Agent mode; Free-tier cap-hits render the V1 upgrade envelope verbatim.
 
 ### Fixed
 
@@ -14,8 +14,8 @@
 
 ### Telemetry
 
-- v1 schema (axonflow-enterprise#2008): heartbeat now emits `telemetry_type: "plugin"`, `endpoint_type` (`localhost | private_network | remote | unknown`), and `AXONFLOW_TRY=1` to force `deployment_mode=community_saas` for tenants behind custom hostnames.
-- `deployment_mode` allowlist normalised to `self_hosted | community_saas | unknown` (was `production`/`development`/`community-saas`). Analytics queries on the legacy values must update.
+- **`AXONFLOW_TELEMETRY=off` is the sole opt-out** for the plugin heartbeat — same single-lever model as the SDKs.
+- **Heartbeat payload v1 schema additions**: `telemetry_type: "plugin"`, `endpoint_type` (`localhost | private_network | remote | unknown`), `deployment_mode` (`self_hosted | community_saas | unknown`). Set `AXONFLOW_TRY=1` if your stack proxies a custom hostname into try.getaxonflow.com so heartbeats classify as `community_saas` correctly.
 
 ## [1.3.0] - 2026-05-07 — V1 Plugin Pro upgrade-prompt envelope + 5 new MCP tools surfaced
 
@@ -26,60 +26,60 @@ SaaS rate-limit hits and documents 5 new agent-callable MCP tools.
 ### Added
 
 - **V1 Plugin Pro upgrade-prompt envelope handling** in both PreToolUse and
-  PostToolUse hooks. When the agent returns a 429 (daily-quota) or 403
-  (graduated / Pro-only) with the structured envelope shape, the plugin:
-  - Parses `upgrade.wording` + `upgrade.buy_url` and prints a single-line
-    nudge to stderr (e.g. `[AxonFlow] Daily limit reached on Free tier
-    (200 events). Pro raises this to 2,000/day. Resets at midnight UTC.`).
-    Surfaced at most once per UTC day so it doesn't spam every hook.
-  - Honours `Retry-After` / `resets_at` by stamping a back-off file at
-    `${XDG_CACHE_HOME:-~/.cache}/axonflow/throttle-until`. Subsequent hook
-    fires fall open locally without re-hammering the agent until the
-    deadline passes. Prevents the silent-retry pattern (581 retries in
-    18h pre-envelope) that motivated this work.
+ PostToolUse hooks. When the agent returns a 429 (daily-quota) or 403
+ (graduated / Pro-only) with the structured envelope shape, the plugin:
+ - Parses `upgrade.wording` + `upgrade.buy_url` and prints a single-line
+ nudge to stderr (e.g. `[AxonFlow] Daily limit reached on Free tier
+ (200 events). Pro raises this to 2,000/day. Resets at midnight UTC.`).
+ Surfaced at most once per UTC day so it doesn't spam every hook.
+ - Honours `Retry-After` / `resets_at` by stamping a back-off file at
+ `${XDG_CACHE_HOME:-~/.cache}/axonflow/throttle-until`. Subsequent hook
+ fires fall open locally without re-hammering the agent until the
+ deadline passes. Prevents the silent-retry pattern (581 retries in
+ 18h pre-envelope) that motivated this work.
 - **References to the 5 new agent-callable MCP tools** in the README. The
-  agent can answer `"what's my tenant ID?"`, `"what would I get on Pro?"`,
-  and related questions directly via:
-  - `axonflow_get_tenant_id` — Free + Pro, no gate.
-  - `axonflow_list_pro_features` — Free + Pro, locked feature list.
-  - `axonflow_request_approval` — Free 1/7d rolling, Pro unlimited.
-  - `axonflow_create_tenant_policy` — Free 2 active max, Pro unlimited.
-  - `axonflow_get_cost_estimate` — Pro-only, hidden from Free `tools/list`.
+ agent can answer `"what's my tenant ID?"`, `"what would I get on Pro?"`,
+ and related questions directly via:
+ - `axonflow_get_tenant_id` — Free + Pro, no gate.
+ - `axonflow_list_pro_features` — Free + Pro, locked feature list.
+ - `axonflow_request_approval` — Free 1/7d rolling, Pro unlimited.
+ - `axonflow_create_tenant_policy` — Free 2 active max, Pro unlimited.
+ - `axonflow_get_cost_estimate` — Pro-only, hidden from Free `tools/list`.
 
-  Auto-discovered via the existing MCP HTTP transport — no client-side
-  registration needed.
+ Auto-discovered via the existing MCP HTTP transport — no client-side
+ registration needed.
 
 ### Changed
 
 - **README "Pro tier license token" section** corrected to the locked V1
-  numbers: 2,000 events/day (was 1,000), unlimited custom policies,
-  unlimited HITL approvals, and the LLM cost pre-flight feature added.
+ numbers: 2,000 events/day (was 1,000), unlimited custom policies,
+ unlimited HITL approvals, and the LLM cost pre-flight feature added.
 - **README MCP-tools section** renumbered from "10 MCP tools" to "15 MCP
-  tools" to include the new V1 Pro tier-identity / tier-capability tools.
+ tools" to include the new V1 Pro tier-identity / tier-capability tools.
 - **`axonflow-status` skill — prefer the local `scripts/status.sh` over
-  the MCP tool** for tenant_id / tier queries. The local script reads
-  state directly and answers without an agent round-trip. Faster, works
-  offline, and works exactly when the user typically asks ("the agent
-  isn't reachable, what's my tenant ID for Stripe Checkout?"). The MCP
-  tool stays as a documented fallback for the rare cases where
-  server-truth matters (revocation, clock skew, server-side overrides).
-  Same flip applied to claude / codex sister plugins.
+ the MCP tool** for tenant_id / tier queries. The local script reads
+ state directly and answers without an agent round-trip. Faster, works
+ offline, and works exactly when the user typically asks ("the agent
+ isn't reachable, what's my tenant ID for Stripe Checkout?"). The MCP
+ tool stays as a documented fallback for the rare cases where
+ server-truth matters (revocation, clock skew, server-side overrides).
+ Same flip applied to claude / codex sister plugins.
 
 ### Internal
 
-- `runtime-e2e/v1_pro_envelope_surface/` — drives a fresh Free-tier
-  tenant past the 200/day cap on `try.getaxonflow.com`, asserts the
-  plugin's envelope helper prints the locked V1 wording to stderr
-  and stamps a throttle deadline.
+- the runtime test bundle — drives a fresh Free-tier
+ tenant past the 200/day cap on `try.getaxonflow.com`, asserts the
+ plugin's envelope helper prints the locked V1 wording to stderr
+ and stamps a throttle deadline.
 - `tests/test-upgrade-prompt.sh` — 21 unit assertions across 8
-  scenarios for every branch of the envelope handler.
+ scenarios for every branch of the envelope handler.
 - `tests/test-skill-status-prefers-local.sh` — 4 content assertions
-  locking the local-first SKILL.md ordering in; wired into
-  `.github/workflows/test.yml`. The cursor-agent CLI is a separate
-  runtime from Cursor IDE and does not load IDE plugins, so the
-  end-to-end runtime proof for the skill flip lives in the sister
-  `axonflow-claude-plugin` test (the wording change is structurally
-  identical across plugins).
+ locking the local-first SKILL.md ordering in; wired into
+ `.github/workflows/test.yml`. The cursor-agent CLI is a separate
+ runtime from Cursor IDE and does not load IDE plugins, so the
+ end-to-end runtime proof for the skill flip lives in the sister
+ `axonflow-claude-plugin` test (the wording change is structurally
+ identical across plugins).
 
 ## [1.2.0] - 2026-05-06 — V1 paid Pro tier wire-up + X-Axonflow-Client header
 
@@ -91,67 +91,67 @@ request via `mcp.json`'s `headers` field.
 ### Added
 
 - **`X-Axonflow-Client: cursor/<version>` header** on every governed
-  agent request. Declared via `mcp.json`'s `headers` field with
-  `${AXONFLOW_CLIENT_HEADER}` interpolation; `pre-tool-check.sh`
-  exports the env var on every hook-invoke. Agents at v7.7.0+ derive
-  request scope from this header and reject cross-quadrant token misuse
-  (e.g. a SaaS Plugin Pro token paired with an SDK request) at the
-  validator boundary. Older agents (pre-v7.7.0) ignore the header and
-  continue to work unchanged.
+ agent request. Declared via `mcp.json`'s `headers` field with
+ `${AXONFLOW_CLIENT_HEADER}` interpolation; `pre-tool-check.sh`
+ exports the env var on every hook-invoke. Agents at v7.7.0+ derive
+ request scope from this header and reject cross-quadrant token misuse
+ (e.g. a SaaS Plugin Pro token paired with an SDK request) at the
+ validator boundary. Older agents (pre-v7.7.0) ignore the header and
+ continue to work unchanged.
 
 - **`scripts/status.sh` tier line now surfaces Pro license expiry date.**
-  The status output's `tier` line parses the JWT `exp` claim from the
-  configured Pro license token and renders one of three shapes: `Pro
-  (expires YYYY-MM-DD, N days remaining)` when active, `Free (Pro
-  expired YYYY-MM-DD — visit https://getaxonflow.com/pricing/ to renew)`
-  when the token is on disk but its `exp` has passed (plugin will not
-  forward an expired token), or `Free (no Pro license configured)`
-  when no token is loaded. Lets users see their renewal date without
-  hitting the agent and catches the lapsed-token state before their
-  next governed call. Display only — JWT signature validation remains
-  the platform's job.
+ The status output's `tier` line parses the JWT `exp` claim from the
+ configured Pro license token and renders one of three shapes: `Pro
+ (expires YYYY-MM-DD, N days remaining)` when active, `Free (Pro
+ expired YYYY-MM-DD — visit https://getaxonflow.com/pricing/ to renew)`
+ when the token is on disk but its `exp` has passed (plugin will not
+ forward an expired token), or `Free (no Pro license configured)`
+ when no token is loaded. Lets users see their renewal date without
+ hitting the agent and catches the lapsed-token state before their
+ next governed call. Display only — JWT signature validation remains
+ the platform's job.
 - **Status surface (`scripts/status.sh` + `/axonflow-status` skill).** Prints
-  the `tenant_id` (which Pro buyers paste into the custom field at Stripe
-  Checkout), the active tier (`Free` or `Pro`), the agent endpoint, the
-  config / token file paths, and the upgrade URL. The license token is
-  redacted to last-4 chars (`AXON-...XXXX`) so the output is safe to
-  screen-share or paste into a support ticket. Resolution mirrors
-  `pre-tool-check.sh`: env first, then `~/.config/axonflow/license-token`
-  (mode `0600` only — looser permissions are reported but not consumed).
-  Surfaces a recovery hint when `try-registration.json` is missing.
+ the `tenant_id` (which Pro buyers paste into the custom field at Stripe
+ Checkout), the active tier (`Free` or `Pro`), the agent endpoint, the
+ config / token file paths, and the upgrade URL. The license token is
+ redacted to last-4 chars (`AXON-.XXXX`) so the output is safe to
+ screen-share or paste into a support ticket. Resolution mirrors
+ `pre-tool-check.sh`: env first, then `~/.config/axonflow/license-token`
+ (mode `0600` only — looser permissions are reported but not consumed).
+ Surfaces a recovery hint when `try-registration.json` is missing.
 - **Pro tier license token wiring (`AXONFLOW_LICENSE_TOKEN`).** Buyers who
-  completed Stripe Checkout for the Pro tier receive an `AXON-`-prefixed
-  license token by email; the plugin now forwards it as the `X-License-Token`
-  header on every governed agent call, so the request joins the Pro tier
-  rather than the free tier. Resolution order: env var first, then
-  `~/.config/axonflow/license-token` (mode `0600` only — files with looser
-  permissions are refused with a stderr warning). When a token is loaded,
-  the mode-clarity canary appends a `Pro tier active` suffix so the active
-  tier is visible at a glance.
+ completed Stripe Checkout for the Pro tier receive an `AXON-`-prefixed
+ license token by email; the plugin now forwards it as the `X-License-Token`
+ header on every governed agent call, so the request joins the Pro tier
+ rather than the free tier. Resolution order: env var first, then
+ `~/.config/axonflow/license-token` (mode `0600` only — files with looser
+ permissions are refused with a stderr warning). When a token is loaded,
+ the mode-clarity canary appends a `Pro tier active` suffix so the active
+ tier is visible at a glance.
 - **Email-recovery helper (`scripts/recover-credentials.sh` +
-  `/recover-credentials` skill).** Drives the full
-  `/api/v1/recover` → magic-link → `/api/v1/recover/verify` flow against
-  a live agent, then writes the new credentials to
-  `~/.config/axonflow/try-registration.json` with mode `0600`. Accepts
-  either the bare hex token or the full magic-link URL from the email,
-  and the community-saas bootstrap picks up the new credentials on the
-  next governed tool call. The `/recover-credentials` skill instructs the
-  agent to invoke the script via the Shell tool when the user reports
-  lost free-tier credentials.
+ `/recover-credentials` skill).** Drives the full
+ `/api/v1/recover` → magic-link → `/api/v1/recover/verify` flow against
+ a live agent, then writes the new credentials to
+ `~/.config/axonflow/try-registration.json` with mode `0600`. Accepts
+ either the bare hex token or the full magic-link URL from the email,
+ and the community-saas bootstrap picks up the new credentials on the
+ next governed tool call. The `/recover-credentials` skill instructs the
+ agent to invoke the script via the Shell tool when the user reports
+ lost free-tier credentials.
 
 ### Fixed
 
-- **Upgrade-pointer URL aligned with the canonical pricing page.** `AXONFLOW_UPGRADE_URL` default (the URL surfaced by `scripts/status.sh` and the `axonflow-status` skill to free-tier users, plus embedded in the `tier   Free (Pro expired ... — visit ... to renew)` line) is now `https://getaxonflow.com/pricing/`. The previous default `https://getaxonflow.com/pro` returned 404 — that page was referenced in PRDs but never built. The pricing page already resolves and carries the Plugin Pro $9.99 tier card with the Stripe buy button, so plugin status output now points free-tier users at a working URL. Override via `AXONFLOW_UPGRADE_URL` env var if needed. Same fix landed in companion plugin releases (openclaw-plugin v2.2.0, claude-plugin v1.2.0, codex-plugin v1.2.0).
+- **Upgrade-pointer URL aligned with the canonical pricing page.** `AXONFLOW_UPGRADE_URL` default (the URL surfaced by `scripts/status.sh` and the `axonflow-status` skill to free-tier users, plus embedded in the `tier Free (Pro expired. — visit. to renew)` line) is now `https://getaxonflow.com/pricing/`. The previous default `https://getaxonflow.com/pro` returned 404 — that page was referenced in PRDs but never built. The pricing page already resolves and carries the Plugin Pro $9.99 tier card with the Stripe buy button, so plugin status output now points free-tier users at a working URL. Override via `AXONFLOW_UPGRADE_URL` env var if needed. Same fix landed in companion plugin releases (openclaw-plugin v2.2.0, claude-plugin v1.2.0, codex-plugin v1.2.0).
 
 ## [1.1.0] - 2026-05-04 — 4 read-side governance skills
 
 ### Added
 
 - **4 new agent-callable governance skills.** Cursor agents can use the
-  AxonFlow read-side governance surface directly in conversation:
-  `explain-decision`, `list-overrides`, `create-override`, and
-  `revoke-override`. Joins the existing `audit-search` skill for full
-  read-side parity.
+ AxonFlow read-side governance surface directly in conversation:
+ `explain-decision`, `list-overrides`, `create-override`, and
+ `revoke-override`. Joins the existing `audit-search` skill for full
+ read-side parity.
 
 ## [1.0.0] - 2026-04-29 — Production, quality, and security hardening — upgrade encouraged
 
@@ -166,7 +166,7 @@ The full set of platform-side security fixes shipped alongside this release — 
 
 **Reliability and bug-fix highlights:**
 - **7-day delivered-heartbeat with stamp-on-success** (this release). Telemetry stamp advances only after the POST returns 2xx, so a transient network failure no longer silences telemetry until the next 7-day window. Concurrent invocations are de-duplicated by an in-flight gate.
-- **Mode-clarity canary log line** on every hook init (this release). Stderr emits `[AxonFlow] Connected to AxonFlow at <URL> (mode=...)` and a PR-blocking CI gate asserts the canary matches the actual outbound destination, guarding against silent endpoint drift.
+- **Mode-clarity canary log line** on every hook init (this release). Stderr emits `[AxonFlow] Connected to AxonFlow at <URL> (mode=.)` and a PR-blocking CI gate asserts the canary matches the actual outbound destination, guarding against silent endpoint drift.
 - **PR-blocking install-to-use smoke against the live community stack** (this release). Catches plugin-side regressions against `try.getaxonflow.com` before they reach a user's terminal.
 
 ### BREAKING
@@ -186,7 +186,7 @@ The full set of platform-side security fixes shipped alongside this release — 
 
 ### Fixed
 
-- The `DO_NOT_TRACK=1 is deprecated...` warning is no longer emitted on every hook invocation when `DO_NOT_TRACK=1` is set.
+- The `DO_NOT_TRACK=1 is deprecated.` warning is no longer emitted on every hook invocation when `DO_NOT_TRACK=1` is set.
 - Telemetry heartbeat now correctly classifies Community-SaaS sessions (was tagged `production` because the bootstrap-injected `AXONFLOW_AUTH` shadowed the resolver, sending `/health` probes to localhost and `platform_version=null` with the wrong `deployment_mode`).
 - Bootstrap and heartbeat now run on macOS — `flock(1)` isn't on stock macOS, so the in-flight lock falls back to a `mkdir`-based atomic lock with stale-lock reclamation when `flock` is unavailable.
 
@@ -205,32 +205,32 @@ The full set of platform-side security fixes shipped alongside this release — 
 
 ### Added
 
-- **Smoke E2E scenario** at `tests/e2e/smoke-block-context.sh` — runs
-  `pre-tool-check.sh` against a reachable AxonFlow stack and asserts the
-  hook exits 2 with `AxonFlow policy violation` + Plugin Batch 1
-  richer-context markers on stderr. Exits 0 (`SKIP:`) when no stack is
-  reachable.
+- **Smoke E2E scenario** at the e2e test suite — runs
+ `pre-tool-check.sh` against a reachable AxonFlow stack and asserts the
+ hook exits 2 with `AxonFlow policy violation` + Plugin Batch 1
+ richer-context markers on stderr. Exits 0 (`SKIP:`) when no stack is
+ reachable.
 - **`.github/workflows/smoke-e2e.yml`** — `workflow_dispatch` triggered job running the smoke scenario.
-  Requires an operator-supplied endpoint (GitHub-hosted runners have no
-  local stack), so not wired to PR events — PR smoke gating needs a
-  self-hosted runner with a live stack.
+ Requires an operator-supplied endpoint (GitHub-hosted runners have no
+ local stack), so not wired to PR events — PR smoke gating needs a
+ self-hosted runner with a live stack.
 
-Full install-and-use matrix lives in `axonflow-enterprise/tests/e2e/plugin-batch-1/cursor-install/`.
+Install-and-use matrix is exercised in the platform integration tests.
 
 ## [0.5.0] - 2026-04-18
 
 ### Added
 
 - **Richer block reason surfaced to Cursor on policy blocks.** When the
-  AxonFlow platform is v7.1.0+, the stderr message accompanying the
-  `exit 2` block now includes `[decision: <id>, risk: <level>, active
-  override: <ov>]` or a pointer to the `explain_decision` MCP tool so
-  the user knows how to unblock themselves. Older platforms see the
-  prior v0.4.0 message — fields are omitted when not returned.
+ AxonFlow platform is v7.1.0+, the stderr message accompanying the
+ `exit 2` block now includes `[decision: <id>, risk: <level>, active
+ override: <ov>]` or a pointer to the `explain_decision` MCP tool so
+ the user knows how to unblock themselves. Older platforms see the
+ prior v0.4.0 message — fields are omitted when not returned.
 - **Access to platform MCP tools** `explain_decision`, `create_override`,
-  `delete_override`, `list_overrides` — available via the agent's MCP
-  server when connected to a v7.1.0+ platform. Cursor's MCP client can
-  invoke them directly.
+ `delete_override`, `list_overrides` — available via the agent's MCP
+ server when connected to a v7.1.0+ platform. Cursor's MCP client can
+ invoke them directly.
 
 ### Compatibility
 
