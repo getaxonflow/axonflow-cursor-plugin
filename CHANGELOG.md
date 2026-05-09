@@ -2,15 +2,11 @@
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-05-09
+## [1.4.0] - 2026-05-09 — Decision History API + policy_version recorded on every decision + telemetry simplification
 
 ### Added
 
-- **V1.1 `list-recent-decisions` skill**. Drives the new MCP tool from Composer/Agent mode; Free-tier cap-hits render the V1 upgrade envelope verbatim.
-
-### Fixed
-
-- `tests/test-hooks.sh` skill-count assertion 12 → 13 to include the new `list-recent-decisions` skill.
+- **`list-recent-decisions` skill** — surfaces the caller's recent governance decisions via the new `list_recent_decisions` MCP tool from Composer/Agent mode. Tier-throttled per the platform's Free/Pro window+limit; Free callers hitting the cap see the upgrade envelope rendered to the host.
 
 ### Telemetry
 
