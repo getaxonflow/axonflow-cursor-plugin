@@ -253,16 +253,16 @@ Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events
 
 To activate Pro on this Cursor install:
 
-1. **Find your tenant ID.** From the plugin install root, run:
+1. **Find your client ID.** From the plugin install root, run:
 
     ```bash
     cd ~/.cursor/plugins/local/axonflow-cursor-plugin
     bash scripts/status.sh
     ```
 
-    The output includes a `tenant_id   cs_<uuid>` line — that's the value Stripe Checkout needs. Copy it. (Or ask the agent in chat: "what is my AxonFlow tenant ID?" — the [`axonflow-status` skill](#cursor-skills) will run the script for you and surface the value.)
+    The output includes a `client_id:  cs_<uuid>` line — that's the value Stripe Checkout needs. Copy it. (Same value the v1.4.x output called `tenant_id`; renamed in v1.5.0 for consistency with the rest of AxonFlow's v9 terminology.) Or ask the agent in chat: "what is my AxonFlow client ID?" (both "client ID" and "tenant ID" still work) — the [`axonflow-status` skill](#cursor-skills) will run the script for you and surface the value.
 
-2. **Buy at the pricing page.** Visit [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) and click **Buy Plugin Pro — $9.99**. At Stripe Checkout, paste your `tenant_id` into the **AxonFlow tenant ID** custom field.
+2. **Buy at the pricing page.** Visit [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) and click **Buy Plugin Pro — $9.99**. At Stripe Checkout, paste your `client_id` into the **AxonFlow tenant ID** custom field. (The Stripe form's field label is still "AxonFlow tenant ID" — same value, the label will be renamed in a future release.)
 
 3. **Install the issued license token.** After checkout you'll receive an `AXON-...` token by email. The plugin forwards it as the `X-License-Token` header on every governed agent call once it's loaded. Two ways to load it (token-resolution order described below):
 
@@ -281,7 +281,7 @@ The free / community tier behaviour is unchanged when no token is set — the pl
 
 ### Check status (`scripts/status.sh`)
 
-Need your `tenant_id` (to paste into the Stripe Checkout custom field at `https://getaxonflow.com/pricing/`)? Want to confirm whether your Pro license token is loaded? Run:
+Need your `client_id` (to paste into the Stripe Checkout custom field at `https://getaxonflow.com/pricing/`)? Want to confirm whether your Pro license token is loaded? Run:
 
 ```bash
 cd ~/.cursor/plugins/local/axonflow-cursor-plugin
@@ -295,15 +295,16 @@ AxonFlow Cursor plugin — status
 
   endpoint           https://try.getaxonflow.com
   mode               community-saas
-  tenant_id:         cs_a1b2c3d4-...
+  client_id:         cs_a1b2c3d4-...  (formerly tenant_id)
   registration file  /home/you/.config/axonflow/try-registration.json
   license token      unset
   tier               Free
   upgrade            https://getaxonflow.com/pricing/
 
-To upgrade to Pro, copy your tenant_id above, visit
-https://getaxonflow.com/pricing/, paste the tenant_id into the "Your AxonFlow tenant ID"
-field, and complete checkout. ...
+To upgrade to Pro, copy your client_id above, visit
+https://getaxonflow.com/pricing/, paste the client_id into the Stripe checkout custom field
+(currently labeled "Your AxonFlow tenant ID" on the Stripe form),
+and complete checkout. ...
 ```
 
 Sample output (Pro tier):
@@ -315,9 +316,9 @@ Sample output (Pro tier):
 
 The license token is **always** redacted to its last 4 chars. The full token is never printed — output is safe to screen-share or paste into a support ticket.
 
-In the chat, use the `/axonflow-status` skill to have the agent run this for you and surface the `tenant_id` and tier.
+In the chat, use the `/axonflow-status` skill to have the agent run this for you and surface the `client_id` and tier.
 
-> **Tip:** the same information is available without spawning a shell — just ask the agent "what's my AxonFlow tenant ID?" and it will call the agent-side `axonflow_get_tenant_id` MCP tool, which returns `tenant_id`, the server-resolved tier, and the upgrade URLs. Other agent-callable Pro-related tools include `axonflow_list_pro_features` ("what would I get if I upgraded?") and `axonflow_get_cost_estimate` (Pro-only LLM cost pre-flight). Auto-discovered via the existing MCP HTTP transport — no extra wiring.
+> **Tip:** the same information is available without spawning a shell — just ask the agent "what's my AxonFlow client ID?" (or "tenant ID" — both phrasings still work) and it will call the agent-side `axonflow_get_tenant_id` MCP tool (the wire name keeps its `_tenant_id` suffix for backwards compatibility), which returns the same identifier, the server-resolved tier, and the upgrade URLs. Other agent-callable Pro-related tools include `axonflow_list_pro_features` ("what would I get if I upgraded?") and `axonflow_get_cost_estimate` (Pro-only LLM cost pre-flight). Auto-discovered via the existing MCP HTTP transport — no extra wiring.
 
 ### Free-tier limits and upgrade prompts
 

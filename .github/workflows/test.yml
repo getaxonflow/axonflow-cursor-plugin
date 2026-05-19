@@ -49,5 +49,8 @@ jobs:
       - name: Run skill-content assertion (axonflow-status prefers local)
         run: bash tests/test-skill-status-prefers-local.sh
 
+      - name: Run status-output terminology assertion (client_id label)
+        run: bash tests/test-status-client-id-label.sh
+
       - name: Run V1 paid-tier wireup runtime test (X-License-Token + recovery)
         run: bash tests/e2e/runtime-license-token-and-recovery.sh

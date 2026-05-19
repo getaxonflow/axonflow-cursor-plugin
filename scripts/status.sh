@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Plugin status — surfaces tenant_id + tier (with Pro expiry date) so Pro
-# buyers can paste the tenant_id into Stripe Checkout's custom field at
-# /pro and so any user can quickly verify which tier they're on AND when
-# their Pro license expires.
+# Plugin status — surfaces client_id + tier (with Pro expiry date) so Pro
+# buyers can paste the client_id into Stripe Checkout's custom field
+# (still labeled "AxonFlow tenant ID" on the form until that surface
+# rebrands separately) at /pro and so any user can quickly verify which
+# tier they're on AND when their Pro license expires.
 #
 # Cursor does not run plugin code in a long-lived process, and the IDE has
 # no command palette for plugin output. The natural surface is a script the
 # user invokes from a terminal — directly, or via the /axonflow-status skill,
 # which guides the agent to run this script in the integrated terminal.
 #
-# Output is human-readable on stdout. The bare tenant_id is also printed to
-# a fenced "tenant_id:" line near the top so callers can grep one value out
-# without parsing the whole block.
+# v1.5.0 terminology: the label is `client_id`; on-disk the field is still
+# stored as `tenant_id` in ~/.config/axonflow/try-registration.json (kept
+# for file-format compat with the installed base). Same value, new
+# user-facing name. See CHANGELOG v1.5.0.
+#
+# Output is human-readable on stdout. The bare client_id is printed on a
+# fenced "client_id:" line so callers can grep one value out without
+# parsing the whole block.
 #
 # Security: the license token is a bearer credential. NEVER print the full
 # value. Show "AXON-...XXXX" using only the last 4 chars (defensively
@@ -50,23 +56,26 @@ REGISTRATION_FILE="${CONFIG_DIR}/try-registration.json"
 LICENSE_TOKEN_FILE="${CONFIG_DIR}/license-token"
 UPGRADE_URL="${AXONFLOW_UPGRADE_URL:-https://getaxonflow.com/pricing/}"
 
-# tenant_id from try-registration.json. Falls back to a clear hint when
-# missing so the buyer knows what to do (most paths auto-register on the
-# next governed tool call; if the file was deleted, recovery re-mints it).
-TENANT_ID=""
+# client_id from try-registration.json. The JSON field is still
+# `tenant_id` on disk (file-format compat with existing installs from
+# v1.4.0 and earlier); we read it under its old key but surface it under
+# the new label. Falls back to a clear hint when missing so the buyer
+# knows what to do (most paths auto-register on the next governed tool
+# call; if the file was deleted, recovery re-mints it).
+CLIENT_ID=""
 TENANT_HINT=""
 if [ -f "$REGISTRATION_FILE" ]; then
   if command -v jq >/dev/null 2>&1; then
-    TENANT_ID=$(jq -r '.tenant_id // empty' "$REGISTRATION_FILE" 2>/dev/null || true)
+    CLIENT_ID=$(jq -r '.tenant_id // empty' "$REGISTRATION_FILE" 2>/dev/null || true)
   else
     # jq not on PATH — best-effort grep fallback so status still works in
     # ultra-minimal shells. Returns empty string on no match.
-    TENANT_ID=$(grep -oE '"tenant_id"[[:space:]]*:[[:space:]]*"[^"]+"' "$REGISTRATION_FILE" 2>/dev/null \
+    CLIENT_ID=$(grep -oE '"tenant_id"[[:space:]]*:[[:space:]]*"[^"]+"' "$REGISTRATION_FILE" 2>/dev/null \
       | head -1 | sed 's/.*"tenant_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
   fi
 fi
-if [ -z "$TENANT_ID" ]; then
-  TENANT_ID="(not registered)"
+if [ -z "$CLIENT_ID" ]; then
+  CLIENT_ID="(not registered)"
   TENANT_HINT="Lost your registration? Run scripts/recover-credentials.sh"
 fi
 
@@ -198,7 +207,7 @@ AxonFlow Cursor plugin — status
 
   endpoint           ${ENDPOINT}
   mode               ${MODE}
-  tenant_id:         ${TENANT_ID}
+  client_id:         ${CLIENT_ID}  (formerly tenant_id)
   registration file  ${REGISTRATION_FILE}
   license token      ${TOKEN_DISPLAY}
   tier               ${TIER_LINE}
@@ -219,9 +228,10 @@ fi
 if [ "$TIER_KIND" = "free" ]; then
   cat <<EOF
 
-To upgrade to Pro, copy your tenant_id above, visit
-${UPGRADE_URL}, paste the tenant_id into the "Your AxonFlow tenant ID"
-field, and complete checkout. The license token arrives by email; activate it
+To upgrade to Pro, copy your client_id above, visit
+${UPGRADE_URL}, paste the client_id into the Stripe checkout custom field
+(currently labeled "Your AxonFlow tenant ID" on the Stripe form),
+and complete checkout. The license token arrives by email; activate it
 with one of:
 
   export AXONFLOW_LICENSE_TOKEN=AXON-...    # current shell
