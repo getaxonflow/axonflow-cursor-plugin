@@ -101,12 +101,13 @@ mint_axon_jwt() {
 }
 
 # Free-tier path: no env token, expect "Free (no Pro license configured)"
-# + tenant_id surfaced.
+# + client_id surfaced (v1.5.0: label is client_id, on-disk JSON key
+# stays tenant_id for file-format compat — see CHANGELOG v1.5.0).
 FREE_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off bash "$STAGE_DIR/scripts/status.sh" 2>&1)
-if echo "$FREE_OUT" | grep -q "tenant_id:[[:space:]]*cs_smoke-tenant-xyz"; then
-  pass "status.sh surfaces tenant_id from try-registration.json"
+if echo "$FREE_OUT" | grep -q "client_id:[[:space:]]*cs_smoke-tenant-xyz"; then
+  pass "status.sh surfaces client_id from try-registration.json"
 else
-  fail "status.sh missing tenant_id; output: $FREE_OUT"
+  fail "status.sh missing client_id; output: $FREE_OUT"
 fi
 if echo "$FREE_OUT" | grep -qE "tier[[:space:]]+Free \(no Pro license configured\)"; then
   pass "status.sh Free-tier line shape (no Pro license configured)"
