@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-05-20 — 401 throttle follow-up: separate stamp file + `-32001` fail-closed carve-out
+
+### Fixed
+
+- **The HTTP 401 stderr nudge is no longer silently suppressed by an earlier tier-limit envelope.** v1.5.1's `axonflow_handle_auth_failure` reused the upgrade-prompt's shared per-UTC-day stamp file (`~/.cache/axonflow/upgrade-prompt-last-shown`). If a 429 daily-quota envelope or 403 active-policies envelope fired earlier the same day, the 401 path's user-visible "credential failed → refresh at https://getaxonflow.com/dashboard" message was suppressed even though `throttle-until` was correctly written. Net effect: a user with a broken `AXONFLOW_AUTH` would see their tool calls quietly fall open with no diagnostic for up to 24h. Reproduced live by stamping the envelope file and invoking the helper — confirmed empty stderr pre-fix. Follow-up to [axonflow-enterprise#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275).
+
+  Fix: introduces a separate `~/.cache/axonflow/auth-failure-prompt-last-shown` stamp file used exclusively by the 401 path, plus a `_axonflow_should_show_auth_prompt_today` helper. Mirrors the pattern already in `axonflow-codex-plugin`. The two prompts are now independent operator concerns and do not cross-suppress.
+
+- **`-32001` (Authentication failed) fail-closed contract restored for HTTP 401 responses.** v1.5.1's auth-failure throttle fires unconditionally on HTTP 401 (before the JSON-RPC error-code parser). When the agent returns 401 with a JSON-RPC body of `{"error": {"code": -32001, "message": "..."}}` — its "your credential maps to no tenant" signal — the throttle short-circuited with `exit 0` (fail-open), regressing the `-32001` fail-closed semantics carried since [axonflow-enterprise#1545](https://github.com/getaxonflow/axonflow-enterprise/issues/1545). The user's tool would proceed despite the agent explicitly saying "block."
+
+  Fix: `scripts/pre-tool-check.sh` now inspects the response body before invoking `axonflow_handle_auth_failure`. When HTTP 401 carries `error.code == -32001`, the auth-failure handler is bypassed and the existing JSON-RPC parser takes over (`exit 2`, fail-closed). Plain 401s (no JSON-RPC -32001 body) still hit the throttle and the storm-prevention fix from v1.5.1 holds. `scripts/post-tool-audit.sh` does not need the carve-out — the audit hook has no fail-closed path; failing-closed on a post-execution audit makes no sense.
+
+### Tests
+
+- `tests/test-auth-failure.sh` gains T5 (pre-stamped envelope file does NOT suppress the auth nudge — assertions fail under the buggy shared-stamp behavior) and T6 (auth nudge IS suppressed by its own same-day stamp — own-stamp own-suppression contract preserved). Both proven non-tautological via mutation: pointing the new helper back at `_AXONFLOW_PROMPT_STAMP` breaks T5.
+- `tests/test-hooks.sh` gains two PreToolUse cases against the mock MCP server: HTTP 401 + `-32001` body → `exit 2` + throttle NOT stamped (carve-out) AND HTTP 401 without `-32001` → `exit 0` + throttle stamped (storm fix). Both proven non-tautological via mutation: removing the carve-out makes the first three carve-out assertions fail; the storm-fix path is untouched.
+
 ## [1.5.1] - 2026-05-20 — Throttle on HTTP 401 to prevent auth-storm
 
 ### Fixed

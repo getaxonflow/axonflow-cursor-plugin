@@ -234,12 +234,102 @@ test_no_stdout_bytes() {
 }
 
 # ---------------------------------------------------------------------------
+# T5: shared-stamp regression — pre-stamped upgrade-prompt-last-shown (from
+# a prior envelope nudge in the same UTC day) MUST NOT suppress the new
+# auth-failure nudge. They must use separate stamp files (mirrors the
+# codex plugin pattern). Without this, the 401 throttle stamp is still
+# written but the user-visible nudge is silently dropped — operator sees
+# their tools fall open with no idea why.
+# ---------------------------------------------------------------------------
+test_401_nudge_not_suppressed_by_envelope_stamp() {
+  local cache; cache=$(mk_tmp_cache)
+  trap "rm -rf '$cache'" EXIT
+  export XDG_CACHE_HOME="$cache"
+
+  local body headers stderr_out
+  body=$(mktemp); mk_body_401 >"$body"
+  headers=$(mktemp); mk_headers_401 >"$headers"
+  stderr_out=$(mktemp)
+
+  # Pre-stamp the envelope (upgrade-prompt) stamp to today — simulates a
+  # 429 / 403 envelope nudge that fired earlier today.
+  mkdir -p "$cache/axonflow"
+  date -u +%Y-%m-%d >"$cache/axonflow/upgrade-prompt-last-shown"
+
+  # shellcheck disable=SC1090
+  . "$HELPER"
+
+  axonflow_handle_auth_failure "401" "$body" "$headers" 2>"$stderr_out"
+  local rc=$?
+  assert_eq "rc == 0 (401 detected even with envelope stamp present)" "0" "$rc"
+
+  # The auth-failure nudge MUST still fire because the auth path uses its
+  # own separate stamp file.
+  assert_contains "stderr contains the 401 nudge (separate stamp wins)" \
+    "$(cat "$stderr_out")" "Authentication failed (HTTP 401)"
+
+  # And the auth-failure stamp itself was written.
+  assert_eq "auth-failure stamp written" "yes" \
+    "$([ -f "$cache/axonflow/auth-failure-prompt-last-shown" ] && echo yes || echo no)"
+
+  # The pre-existing envelope stamp must NOT have been touched (each helper
+  # owns its own stamp; cross-contamination would re-introduce the bug in
+  # reverse — a 401 in the morning would suppress a later envelope nudge).
+  local upgrade_stamp_after
+  upgrade_stamp_after=$(cat "$cache/axonflow/upgrade-prompt-last-shown" 2>/dev/null || echo "")
+  assert_eq "upgrade-prompt stamp unchanged" "$(date -u +%Y-%m-%d)" "$upgrade_stamp_after"
+
+  rm -f "$body" "$headers" "$stderr_out"
+}
+
+# ---------------------------------------------------------------------------
+# T6: same-day suppression on auth-failure prompt itself — a second 401
+# the same UTC day still writes the throttle stamp but suppresses the
+# stderr nudge (matches the codex plugin behavior).
+# ---------------------------------------------------------------------------
+test_401_nudge_suppressed_same_day_for_own_stamp() {
+  local cache; cache=$(mk_tmp_cache)
+  trap "rm -rf '$cache'" EXIT
+  export XDG_CACHE_HOME="$cache"
+
+  local body headers stderr1 stderr2
+  body=$(mktemp); mk_body_401 >"$body"
+  headers=$(mktemp); mk_headers_401 >"$headers"
+  stderr1=$(mktemp)
+  stderr2=$(mktemp)
+
+  # shellcheck disable=SC1090
+  . "$HELPER"
+
+  # First 401: nudge fires.
+  axonflow_handle_auth_failure "401" "$body" "$headers" 2>"$stderr1"
+  assert_contains "first 401 emits nudge" "$(cat "$stderr1")" \
+    "Authentication failed (HTTP 401)"
+
+  # Clear the throttle file so the second call exercises the prompt path,
+  # not just the short-circuit. (The throttle file would block the
+  # subsequent agent call entirely, but the stamp logic is what we're
+  # validating here.)
+  rm -f "$cache/axonflow/throttle-until"
+
+  # Second 401 same day: stderr stays empty (the nudge is suppressed by
+  # the now-stamped auth-failure-prompt-last-shown).
+  axonflow_handle_auth_failure "401" "$body" "$headers" 2>"$stderr2"
+  local size; size=$(wc -c <"$stderr2" | tr -d ' ')
+  assert_eq "second 401 same day: stderr empty (own-stamp suppresses)" "0" "$size"
+
+  rm -f "$body" "$headers" "$stderr1" "$stderr2"
+}
+
+# ---------------------------------------------------------------------------
 # Run all tests
 # ---------------------------------------------------------------------------
 run_test "T1: HTTP 401 stamps throttle (5-min cooldown, auth_failure limit_type, stderr nudge)" test_401_stamps_throttle
 run_test "T2: non-401 statuses ignored (200/403/404/429/500/empty)" test_non_401_status_ignored
 run_test "T3: throttle_active reports active right after 401" test_throttle_active_after_401
 run_test "T4: no stdout bytes (hook-protocol guard)" test_no_stdout_bytes
+run_test "T5: 401 nudge NOT suppressed by envelope stamp (separate stamp files — #2275 follow-up)" test_401_nudge_not_suppressed_by_envelope_stamp
+run_test "T6: 401 nudge suppressed by its own same-day stamp (own-stamp behavior preserved)" test_401_nudge_suppressed_same_day_for_own_stamp
 
 echo
 echo "==============================="

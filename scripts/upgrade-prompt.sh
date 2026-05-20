@@ -16,8 +16,9 @@
 # protocol (any byte on stdout from a non-deny path breaks the parser).
 #
 # Cache layout (mode 0700):
-#   ~/.cache/axonflow/throttle-until                 — epoch deadline file
-#   ~/.cache/axonflow/upgrade-prompt-last-shown      — date stamp (YYYY-MM-DD)
+#   ~/.cache/axonflow/throttle-until                       — epoch deadline file
+#   ~/.cache/axonflow/upgrade-prompt-last-shown            — tier-limit nudge stamp (YYYY-MM-DD)
+#   ~/.cache/axonflow/auth-failure-prompt-last-shown       — HTTP 401 nudge stamp (YYYY-MM-DD)
 #
 # Functions exported to callers:
 #   axonflow_throttle_active            — exit 0 if throttle deadline still in future
@@ -37,6 +38,15 @@ _AXONFLOW_UPGRADE_PROMPT_LOADED=1
 _AXONFLOW_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/axonflow"
 _AXONFLOW_THROTTLE_FILE="${_AXONFLOW_CACHE_DIR}/throttle-until"
 _AXONFLOW_PROMPT_STAMP="${_AXONFLOW_CACHE_DIR}/upgrade-prompt-last-shown"
+# Distinct stamp file for the auth-failure (HTTP 401) nudge. Kept separate
+# from the upgrade-prompt stamp so a tier-limit envelope earlier in the
+# UTC day doesn't silently suppress a later auth-failure nudge (and vice
+# versa) — they're independent operator concerns. See
+# axonflow-enterprise#2275 follow-up: pre-fix, both prompts shared
+# upgrade-prompt-last-shown, so any envelope nudge would stamp it and the
+# 401 path would later find today's date already present and skip its
+# stderr message even though throttle-until was correctly written.
+_AXONFLOW_AUTH_PROMPT_STAMP="${_AXONFLOW_CACHE_DIR}/auth-failure-prompt-last-shown"
 
 _axonflow_ensure_cache_dir() {
   if [ ! -d "$_AXONFLOW_CACHE_DIR" ]; then
@@ -84,6 +94,28 @@ _axonflow_should_show_prompt_today() {
     fi
   fi
   echo "$today" >"$_AXONFLOW_PROMPT_STAMP" 2>/dev/null
+  return 0
+}
+
+# _axonflow_should_show_auth_prompt_today
+#   Returns 0 if today's date stamp is missing on the auth-failure prompt
+#   (so we show the credential-refresh nudge at most once per UTC day).
+#   Kept distinct from _axonflow_should_show_prompt_today so a tier-limit
+#   nudge earlier in the day doesn't suppress a later auth-failure nudge
+#   (and vice versa) — they're independent operator concerns. Mirrors the
+#   pattern in axonflow-codex-plugin/scripts/upgrade-prompt.sh.
+_axonflow_should_show_auth_prompt_today() {
+  _axonflow_ensure_cache_dir
+  local today
+  today=$(date -u +%Y-%m-%d)
+  if [ -f "$_AXONFLOW_AUTH_PROMPT_STAMP" ]; then
+    local last
+    last=$(awk 'NR==1 {print $1}' "$_AXONFLOW_AUTH_PROMPT_STAMP" 2>/dev/null)
+    if [ "$last" = "$today" ]; then
+      return 1
+    fi
+  fi
+  echo "$today" >"$_AXONFLOW_AUTH_PROMPT_STAMP" 2>/dev/null
   return 0
 }
 
@@ -248,7 +280,12 @@ axonflow_handle_auth_failure() {
   # Surface the failure once per UTC day so the user sees what's wrong
   # without spamming every hook fire. The throttle stamp does the actual
   # back-off work; this is just the user-visible nudge.
-  if _axonflow_should_show_prompt_today; then
+  #
+  # Uses _axonflow_should_show_auth_prompt_today (not the upgrade-prompt
+  # stamp) so a tier-limit envelope nudge earlier in the same UTC day
+  # doesn't silently suppress this auth-failure nudge. The two prompts
+  # are independent operator concerns and must not share a stamp file.
+  if _axonflow_should_show_auth_prompt_today; then
     {
       echo "[AxonFlow] Authentication failed (HTTP 401) against the AxonFlow agent. Tool governance is paused for 5 minutes."
       echo "[AxonFlow] Refresh your credentials: https://getaxonflow.com/dashboard or run 'cursor plugin update axonflow' to refresh the plugin."

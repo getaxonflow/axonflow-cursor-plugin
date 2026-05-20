@@ -168,6 +168,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
             resp = {'jsonrpc': '2.0', 'id': body.get('id'), 'error': {'code': -32700, 'message': 'Parse error'}}
         elif 'FAIL_OPEN_UNKNOWN' in statement:
             resp = {'jsonrpc': '2.0', 'id': body.get('id'), 'error': {'code': -99999, 'message': 'Unknown code'}}
+        elif 'HTTP_401_WITH_32001' in statement:
+            # HTTP 401 + JSON-RPC -32001 body — the carve-out path. The
+            # pre-#74 contract was: -32001 means 'agent says credential maps
+            # to no tenant' → exit 2 fail-closed. PR #74 added the
+            # auth-failure throttle which fires on any 401 → exit 0
+            # fail-open. Without the carve-out shipped in this PR, the
+            # throttle silently regresses the fail-closed contract.
+            resp = {'jsonrpc': '2.0', 'id': body.get('id'), 'error': {'code': -32001, 'message': 'Credential maps to no tenant'}}
+            self.send_response(401)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+            return
+        elif 'HTTP_401_NO_32001' in statement:
+            # HTTP 401 + non-32001 body — the auth-storm path that PR #74
+            # was designed for. The auth-failure throttle SHOULD fire
+            # (exit 0 fail-open, stamp throttle-until).
+            resp = {'error': 'unauthorized'}
+            self.send_response(401)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode())
+            return
         elif 'AUTH_ERROR' in statement:
             # JSON-RPC auth error
             resp = {'jsonrpc': '2.0', 'id': body.get('id'), 'error': {'code': -32001, 'message': 'Authentication failed'}}
@@ -278,6 +301,60 @@ else
     rm -f "$STDERR_FILE"
     assert_eq "Exit code is 2 (block)" "2" "$EXIT_CODE"
     assert_contains "Has governance blocked on stderr" "$STDERR_OUT" "governance blocked"
+fi
+
+echo ""
+echo "--- PreToolUse: HTTP 401 + JSON-RPC -32001 → exit 2 (fail-closed; carve-out from #74 throttle) ---"
+if [ "${1:-}" = "--live" ]; then
+    echo "  SKIP: HTTP-401+-32001 carve-out test only works with mock server"
+    ((PASS++)) || true
+else
+    # Run in fresh XDG_CACHE_HOME so a prior test's throttle stamp doesn't
+    # short-circuit this call via axonflow_throttle_active.
+    CARVE_CACHE=$(mktemp -d)
+    STDERR_FILE=$(mktemp)
+    set +e
+    OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"HTTP_401_WITH_32001 test"}}' | \
+        XDG_CACHE_HOME="$CARVE_CACHE" "$PRE_HOOK" 2>"$STDERR_FILE")
+    EXIT_CODE=$?
+    set -e
+    STDERR_OUT=$(cat "$STDERR_FILE")
+    rm -f "$STDERR_FILE"
+    assert_eq "Exit code is 2 (fail-closed on -32001 even when HTTP=401)" "2" "$EXIT_CODE"
+    assert_contains "Has 'governance blocked' on stderr (not throttle nudge)" "$STDERR_OUT" "governance blocked"
+    # CRITICAL: throttle file MUST NOT be stamped — the carve-out short-circuits
+    # the auth-failure handler so the operator's tool is not silently fail-opened
+    # for 5 minutes when the agent's actual answer was 'no, fail closed.'
+    assert_file_not_exists "throttle-until NOT stamped on -32001 carve-out" \
+        "$CARVE_CACHE/axonflow/throttle-until"
+    rm -rf "$CARVE_CACHE"
+fi
+
+echo ""
+echo "--- PreToolUse: HTTP 401 without -32001 body → exit 0 (fail-open; throttle stamps; #74 storm-fix) ---"
+if [ "${1:-}" = "--live" ]; then
+    echo "  SKIP: HTTP-401-no-32001 throttle test only works with mock server"
+    ((PASS++)) || true
+else
+    # Different cache dir so this test is independent of the carve-out test
+    # above. The throttle stamp written by this call is the expected behavior.
+    STORM_CACHE=$(mktemp -d)
+    STDERR_FILE=$(mktemp)
+    set +e
+    OUTPUT=$(echo '{"tool_name":"Bash","tool_input":{"command":"HTTP_401_NO_32001 test"}}' | \
+        XDG_CACHE_HOME="$STORM_CACHE" "$PRE_HOOK" 2>"$STDERR_FILE")
+    EXIT_CODE=$?
+    set -e
+    rm -f "$STDERR_FILE"
+    assert_eq "Exit code is 0 (fail-open on plain 401 — storm fix)" "0" "$EXIT_CODE"
+    assert_file_exists "throttle-until IS stamped on plain 401" \
+        "$STORM_CACHE/axonflow/throttle-until"
+    # Verify the stamp carries the auth_failure marker (not envelope marker)
+    if [ -f "$STORM_CACHE/axonflow/throttle-until" ]; then
+        LIMIT=$(awk 'NR==1 {print $2}' "$STORM_CACHE/axonflow/throttle-until")
+        assert_eq "stamp limit_type is auth_failure" "auth_failure" "$LIMIT"
+    fi
+    rm -rf "$STORM_CACHE"
 fi
 
 echo ""
