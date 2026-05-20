@@ -46,6 +46,9 @@ jobs:
       - name: Run upgrade-prompt envelope-handler unit tests
         run: bash tests/test-upgrade-prompt.sh
 
+      - name: Run auth-failure (HTTP 401) throttle unit tests
+        run: bash tests/test-auth-failure.sh
+
       - name: Run skill-content assertion (axonflow-status prefers local)
         run: bash tests/test-skill-status-prefers-local.sh
 
