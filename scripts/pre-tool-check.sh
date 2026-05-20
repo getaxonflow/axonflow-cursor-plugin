@@ -249,6 +249,15 @@ if axonflow_handle_envelope_response "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HE
   exit 0
 fi
 
+# HTTP 401 — broken AXONFLOW_AUTH credential. The envelope handler returns 1
+# for 401 (it only fires on 429/403), so without this guard every hook would
+# fall through and re-fire the same 401 (axonflow-enterprise#2275 — 716
+# retries in 24h from one source IP). Stamp a 5-minute throttle so the
+# operator has time to refresh the credential without the storm.
+if axonflow_handle_auth_failure "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; then
+  exit 0
+fi
+
 RESPONSE=$(cat "$PRECHECK_BODY")
 if [ -z "$RESPONSE" ]; then
   exit 0

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-05-20 — Throttle on HTTP 401 to prevent auth-storm
+
+### Fixed
+
+- **HTTP 401 from the AxonFlow agent now stamps a 5-minute throttle.** When `AXONFLOW_AUTH` is invalid or expired, every PreToolUse and PostToolUse hook used to fire a 401, the envelope handler returned non-zero (it only fires on 429/403), and the script fell through. The next tool call immediately re-fired another 401 — a tight retry loop. One customer observed 716 retries against `/api/v1/audit/tool-call` from a single source IP in 24h. See [axonflow-enterprise#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275).
+
+  The fix adds `axonflow_handle_auth_failure` to `scripts/upgrade-prompt.sh`. On 401 it stamps `~/.cache/axonflow/throttle-until` with a 5-minute cooldown and `auth_failure` limit_type, so subsequent hook fires short-circuit via `axonflow_throttle_active`. The user sees a one-time-per-UTC-day nudge on stderr pointing at https://getaxonflow.com/dashboard. After 5 minutes the throttle clears automatically and the next hook retries — so a refreshed credential is picked up without further action.
+
+  Wired into both `scripts/pre-tool-check.sh` and `scripts/post-tool-audit.sh`, mirror the existing envelope-handling flow. Fail-open semantics preserved: the user's tool call is not blocked while the throttle is active.
+
 ## [1.5.0] - 2026-05-19 — Terminology: `tenant_id` → `client_id` in user-facing output
 
 ### Changed

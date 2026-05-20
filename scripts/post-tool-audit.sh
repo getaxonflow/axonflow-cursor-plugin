@@ -200,6 +200,14 @@ if [ -n "$OUTPUT_TEXT" ] && [ "$OUTPUT_TEXT" != "null" ]; then
   if axonflow_handle_envelope_response "$SCAN_HTTP" "$SCAN_BODY" "$SCAN_HEADERS"; then
     exit 0
   fi
+
+  # HTTP 401 — broken AXONFLOW_AUTH credential. Mirrors pre-tool-check.sh so
+  # the post-audit path cannot keep the storm alive after pre-check has gone
+  # quiet. Stamps a 5-minute throttle and falls open
+  # (axonflow-enterprise#2275).
+  if axonflow_handle_auth_failure "$SCAN_HTTP" "$SCAN_BODY" "$SCAN_HEADERS"; then
+    exit 0
+  fi
   SCAN_RESPONSE=$(cat "$SCAN_BODY" 2>/dev/null || echo "")
 
   # If PII was found, add context
