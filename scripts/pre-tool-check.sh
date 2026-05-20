@@ -254,8 +254,24 @@ fi
 # fall through and re-fire the same 401 (axonflow-enterprise#2275 — 716
 # retries in 24h from one source IP). Stamp a 5-minute throttle so the
 # operator has time to refresh the credential without the storm.
-if axonflow_handle_auth_failure "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; then
-  exit 0
+#
+# Carve-out: when a 401 carries a JSON-RPC body with error.code == -32001,
+# the agent is telling us "your credential maps to no tenant" — an expected
+# fail-closed signal that the JSON-RPC parser below handles with `exit 2`.
+# We must NOT short-circuit that path through the auth-failure throttle
+# (which exits 0 / fail-open). Without this carve-out, PR #74 silently
+# regressed the -32001 fail-closed contract carried since #1545.
+JSONRPC_CODE_PRECHECK=""
+if [ "$HTTP_CODE" = "401" ] && [ -s "$PRECHECK_BODY" ]; then
+  JSONRPC_CODE_PRECHECK=$(jq -r '.error.code // empty' "$PRECHECK_BODY" 2>/dev/null || echo "")
+fi
+if [ "$JSONRPC_CODE_PRECHECK" = "-32001" ]; then
+  # Fall through to the JSON-RPC parser below — it will exit 2 (fail-closed).
+  :
+else
+  if axonflow_handle_auth_failure "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; then
+    exit 0
+  fi
 fi
 
 RESPONSE=$(cat "$PRECHECK_BODY")
