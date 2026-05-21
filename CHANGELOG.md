@@ -4,55 +4,130 @@
 
 ### Added
 
-- **`org_id` field in the telemetry heartbeat body (v9.1 preflight, [axonflow-enterprise#2277](https://github.com/getaxonflow/axonflow-enterprise/issues/2277)).** Brings the Cursor plugin's telemetry up to parity with the platform's `startup_telemetry.go` emitter — every heartbeat now identifies which deployment-organization emitted it. Three sources in precedence order:
+- **`org_id` field in the telemetry heartbeat body.** Brings the Cursor
+  plugin's telemetry up to parity with the platform — every heartbeat
+  now identifies which deployment-organization emitted it. Three
+  sources in precedence order:
   1. The `ORG_ID` env var when set.
-  2. The `tenant_id` from `~/.config/axonflow/try-registration.json` (the `cs_<uuid>` Community SaaS tenant identifier).
+  2. The `tenant_id` from `~/.config/axonflow/try-registration.json`
+     (the `cs_<uuid>` Community SaaS tenant identifier).
   3. The `local-dev-org` sentinel when neither is configured.
 
-  Always emitted on the wire. Receiver-side already accepts the field with `omitempty` for backward compat. Locked in by a new assertion in `tests/heartbeat-real-stack/run_real_stack.sh`: the captured ping body's `org_id` MUST match the `cs_<uuid>` tenant_id from the registration file. Mutation-tested.
+  Always emitted on the wire; older receivers ignore the field cleanly
+  for backward compat. Honors `AXONFLOW_TELEMETRY=off` like every other
+  heartbeat field. See
+  [getaxonflow.com/privacy/](https://getaxonflow.com/privacy/) for the
+  customer-facing commitment that covers this field.
 
 ### Changed
 
-- **`scripts/telemetry-ping.sh` header comment** softened from "Anonymous telemetry heartbeat" to "Telemetry heartbeat" alongside the v9.1 `org_id` addition — the operator-supplied `ORG_ID` is not anonymized.
+- **`scripts/telemetry-ping.sh` header comment** softened from "Anonymous
+  telemetry heartbeat" to "Telemetry heartbeat" alongside the `org_id`
+  addition — the operator-supplied `ORG_ID` is not anonymized.
+
+### Tracking
+
+- [#2277](https://github.com/getaxonflow/axonflow-enterprise/issues/2277)
 
 ## [1.5.2] - 2026-05-20 — 401 throttle follow-up: separate stamp file + `-32001` fail-closed carve-out
 
 ### Fixed
 
-- **The HTTP 401 stderr nudge is no longer silently suppressed by an earlier tier-limit envelope.** v1.5.1's `axonflow_handle_auth_failure` reused the upgrade-prompt's shared per-UTC-day stamp file (`~/.cache/axonflow/upgrade-prompt-last-shown`). If a 429 daily-quota envelope or 403 active-policies envelope fired earlier the same day, the 401 path's user-visible "credential failed → refresh at https://getaxonflow.com/dashboard" message was suppressed even though `throttle-until` was correctly written. Net effect: a user with a broken `AXONFLOW_AUTH` would see their tool calls quietly fall open with no diagnostic for up to 24h. Reproduced live by stamping the envelope file and invoking the helper — confirmed empty stderr pre-fix. Follow-up to [axonflow-enterprise#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275).
+- **The HTTP 401 stderr nudge is no longer silently suppressed by an
+  earlier tier-limit envelope.** v1.5.1's auth-failure handler reused
+  the upgrade-prompt's shared per-UTC-day stamp file
+  (`~/.cache/axonflow/upgrade-prompt-last-shown`). If a 429 daily-quota
+  envelope or 403 active-policies envelope fired earlier the same day,
+  the 401 path's user-visible "credential failed → refresh at
+  https://getaxonflow.com/dashboard" message was suppressed even
+  though `throttle-until` was correctly written. Net effect: a user
+  with a broken `AXONFLOW_AUTH` would see their tool calls quietly
+  fall open with no diagnostic for up to 24h. Fix introduces a
+  separate `~/.cache/axonflow/auth-failure-prompt-last-shown` stamp
+  file used exclusively by the 401 path, so the two prompts are
+  independent operator concerns and do not cross-suppress.
 
-  Fix: introduces a separate `~/.cache/axonflow/auth-failure-prompt-last-shown` stamp file used exclusively by the 401 path, plus a `_axonflow_should_show_auth_prompt_today` helper. Mirrors the pattern already in `axonflow-codex-plugin`. The two prompts are now independent operator concerns and do not cross-suppress.
+- **`-32001` (Authentication failed) fail-closed contract restored for
+  HTTP 401 responses.** v1.5.1's auth-failure throttle fired
+  unconditionally on HTTP 401 (before the JSON-RPC error-code parser).
+  When the agent returned 401 with a JSON-RPC body of
+  `{"error": {"code": -32001, "message": "..."}}` — its "your
+  credential maps to no tenant" signal — the throttle short-circuited
+  with `exit 0` (fail-open), regressing the previously documented
+  `-32001` fail-closed semantics. The user's tool would proceed
+  despite the agent explicitly saying "block." Fix: `pre-tool-check.sh`
+  inspects the response body before invoking the auth-failure handler,
+  and when HTTP 401 carries `error.code == -32001`, the JSON-RPC
+  parser takes over (`exit 2`, fail-closed). Plain 401s (no JSON-RPC
+  `-32001` body) still hit the throttle and the v1.5.1 storm-prevention
+  fix holds. `post-tool-audit.sh` does not need the carve-out — the
+  audit hook has no fail-closed path; failing-closed on a
+  post-execution audit makes no sense.
 
-- **`-32001` (Authentication failed) fail-closed contract restored for HTTP 401 responses.** v1.5.1's auth-failure throttle fires unconditionally on HTTP 401 (before the JSON-RPC error-code parser). When the agent returns 401 with a JSON-RPC body of `{"error": {"code": -32001, "message": "..."}}` — its "your credential maps to no tenant" signal — the throttle short-circuited with `exit 0` (fail-open), regressing the `-32001` fail-closed semantics carried since [axonflow-enterprise#1545](https://github.com/getaxonflow/axonflow-enterprise/issues/1545). The user's tool would proceed despite the agent explicitly saying "block."
+### Tracking
 
-  Fix: `scripts/pre-tool-check.sh` now inspects the response body before invoking `axonflow_handle_auth_failure`. When HTTP 401 carries `error.code == -32001`, the auth-failure handler is bypassed and the existing JSON-RPC parser takes over (`exit 2`, fail-closed). Plain 401s (no JSON-RPC -32001 body) still hit the throttle and the storm-prevention fix from v1.5.1 holds. `scripts/post-tool-audit.sh` does not need the carve-out — the audit hook has no fail-closed path; failing-closed on a post-execution audit makes no sense.
-
-### Tests
-
-- `tests/test-auth-failure.sh` gains T5 (pre-stamped envelope file does NOT suppress the auth nudge — assertions fail under the buggy shared-stamp behavior) and T6 (auth nudge IS suppressed by its own same-day stamp — own-stamp own-suppression contract preserved). Both proven non-tautological via mutation: pointing the new helper back at `_AXONFLOW_PROMPT_STAMP` breaks T5.
-- `tests/test-hooks.sh` gains two PreToolUse cases against the mock MCP server: HTTP 401 + `-32001` body → `exit 2` + throttle NOT stamped (carve-out) AND HTTP 401 without `-32001` → `exit 0` + throttle stamped (storm fix). Both proven non-tautological via mutation: removing the carve-out makes the first three carve-out assertions fail; the storm-fix path is untouched.
+- [#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275)
+- [#1545](https://github.com/getaxonflow/axonflow-enterprise/issues/1545)
 
 ## [1.5.1] - 2026-05-20 — Throttle on HTTP 401 to prevent auth-storm
 
 ### Fixed
 
-- **HTTP 401 from the AxonFlow agent now stamps a 5-minute throttle.** When `AXONFLOW_AUTH` is invalid or expired, every PreToolUse and PostToolUse hook used to fire a 401, the envelope handler returned non-zero (it only fires on 429/403), and the script fell through. The next tool call immediately re-fired another 401 — a tight retry loop. One customer observed 716 retries against `/api/v1/audit/tool-call` from a single source IP in 24h. See [axonflow-enterprise#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275).
+- **HTTP 401 from the AxonFlow agent now stamps a 5-minute throttle.**
+  When `AXONFLOW_AUTH` is invalid or expired, every PreToolUse and
+  PostToolUse hook used to fire a 401, the envelope handler returned
+  non-zero (it only fires on 429/403), and the script fell through.
+  The next tool call immediately re-fired another 401 — a tight retry
+  loop. One customer observed 716 retries against the audit endpoint
+  from a single source IP in 24h. Now, on 401 the plugin stamps
+  `~/.cache/axonflow/throttle-until` with a 5-minute cooldown and
+  `auth_failure` limit_type, so subsequent hook fires short-circuit
+  locally. The user sees a one-time-per-UTC-day nudge on stderr
+  pointing at https://getaxonflow.com/dashboard. After 5 minutes the
+  throttle clears automatically and the next hook retries — so a
+  refreshed credential is picked up without further action. Wired into
+  both pre- and post-tool hooks. Fail-open semantics preserved: the
+  user's tool call is not blocked while the throttle is active.
 
-  The fix adds `axonflow_handle_auth_failure` to `scripts/upgrade-prompt.sh`. On 401 it stamps `~/.cache/axonflow/throttle-until` with a 5-minute cooldown and `auth_failure` limit_type, so subsequent hook fires short-circuit via `axonflow_throttle_active`. The user sees a one-time-per-UTC-day nudge on stderr pointing at https://getaxonflow.com/dashboard. After 5 minutes the throttle clears automatically and the next hook retries — so a refreshed credential is picked up without further action.
+### Tracking
 
-  Wired into both `scripts/pre-tool-check.sh` and `scripts/post-tool-audit.sh`, mirror the existing envelope-handling flow. Fail-open semantics preserved: the user's tool call is not blocked while the throttle is active.
+- [#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275)
 
 ## [1.5.0] - 2026-05-19 — Terminology: `tenant_id` → `client_id` in user-facing output
 
 ### Changed
 
-- **`scripts/status.sh` output: `tenant_id:` label is now `client_id:`.** Same value, new user-facing term. Aligns Cursor plugin output with the rest of AxonFlow's v9 terminology (the `org_id` ↔ `client_id` ↔ deployment-license-identity three-identifier model — see [axonflow-enterprise#2230](https://github.com/getaxonflow/axonflow-enterprise/issues/2230)). For this release, the output carries a parenthetical bridge note (`(formerly tenant_id)`) so existing users connect the old and new terms without surprise. The bridge note will be removed in v1.6.0.
+- **`scripts/status.sh` output: `tenant_id:` label is now `client_id:`.**
+  Same value, new user-facing term. Aligns Cursor plugin output with
+  the rest of AxonFlow's v9 terminology (the `org_id` ↔ `client_id`
+  ↔ deployment-license-identity three-identifier model). For this
+  release, the output carries a parenthetical bridge note
+  (`(formerly tenant_id)`) so existing users connect the old and new
+  terms without surprise. The bridge note will be removed in v1.6.0.
 
-  **Cosmetic only — no config change is required.** The on-disk registration file at `~/.config/axonflow/try-registration.json` continues to use the `tenant_id` JSON key (file-format compat with installed base); only the human-readable status output reads `client_id`. Wire-level `X-Axonflow-Client` header is unchanged. The agent-side MCP tool `axonflow_get_tenant_id` keeps its name (callable both as muscle-memory "what's my tenant ID?" and the new "what's my client ID?" — both return the same identifier).
+  **Cosmetic only — no config change is required.** The on-disk
+  registration file at `~/.config/axonflow/try-registration.json`
+  continues to use the `tenant_id` JSON key (file-format compat with
+  installed base); only the human-readable status output reads
+  `client_id`. Wire-level `X-Axonflow-Client` header is unchanged. The
+  agent-side MCP tool `axonflow_get_tenant_id` keeps its name
+  (callable both as muscle-memory "what's my tenant ID?" and the new
+  "what's my client ID?" — both return the same identifier).
 
-  **Action required for users who scripted around the old output:** if your tooling greps for `tenant_id:` in `scripts/status.sh` stdout, update to grep for `client_id:` (or use the underlying `~/.config/axonflow/try-registration.json` file which still carries the legacy key).
+  **Action required for users who scripted around the old output:** if
+  your tooling greps for `tenant_id:` in `scripts/status.sh` stdout,
+  update to grep for `client_id:` (or use the underlying
+  `~/.config/axonflow/try-registration.json` file which still carries
+  the legacy key).
 
-- **README install-flow examples** updated to use `client_id` terminology consistently. The "Activate Pro tier" walkthrough notes that Stripe Checkout's custom field is still labeled "AxonFlow tenant ID" until that form is updated separately.
+- **README install-flow examples** updated to use `client_id`
+  terminology consistently. The "Activate Pro tier" walkthrough notes
+  that Stripe Checkout's custom field is still labeled "AxonFlow
+  tenant ID" until that form is updated separately.
+
+### Tracking
+
+- [#2230](https://github.com/getaxonflow/axonflow-enterprise/issues/2230)
 
 ## [1.4.0] - 2026-05-09 — Decision History API + policy_version recorded on every decision + telemetry simplification
 
