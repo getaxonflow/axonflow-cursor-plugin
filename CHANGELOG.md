@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`org_id` field in the telemetry heartbeat body (v9.1 preflight, [axonflow-enterprise#2277](https://github.com/getaxonflow/axonflow-enterprise/issues/2277)).** Brings the Cursor plugin's telemetry up to parity with the platform's `startup_telemetry.go` emitter — every heartbeat now identifies which deployment-organization emitted it. Three sources in precedence order:
+  1. The `ORG_ID` env var when set.
+  2. The `tenant_id` from `~/.config/axonflow/try-registration.json` (the `cs_<uuid>` Community SaaS tenant identifier).
+  3. The `local-dev-org` sentinel when neither is configured.
+
+  Always emitted on the wire. Receiver-side already accepts the field with `omitempty` for backward compat. Locked in by a new assertion in `tests/heartbeat-real-stack/run_real_stack.sh`: the captured ping body's `org_id` MUST match the `cs_<uuid>` tenant_id from the registration file. Mutation-tested.
+
+### Changed
+
+- **`scripts/telemetry-ping.sh` header comment** softened from "Anonymous telemetry heartbeat" to "Telemetry heartbeat" alongside the v9.1 `org_id` addition — the operator-supplied `ORG_ID` is not anonymized.
+
 ## [1.5.2] - 2026-05-20 — 401 throttle follow-up: separate stamp file + `-32001` fail-closed carve-out
 
 ### Fixed
