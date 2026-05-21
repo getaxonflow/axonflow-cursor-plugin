@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-05-20 — 401 throttle follow-up: separate stamp file + JSON-RPC auth-error fail-closed carve-out + `org_id` in telemetry heartbeat
+
 ### Added
 
 - **`org_id` field in the telemetry heartbeat body.** Brings the Cursor
@@ -18,18 +20,6 @@
   heartbeat field. See
   [getaxonflow.com/privacy/](https://getaxonflow.com/privacy/) for the
   customer-facing commitment that covers this field.
-
-### Changed
-
-- **`scripts/telemetry-ping.sh` header comment** softened from "Anonymous
-  telemetry heartbeat" to "Telemetry heartbeat" alongside the `org_id`
-  addition — the operator-supplied `ORG_ID` is not anonymized.
-
-### Tracking
-
-- [#2277](https://github.com/getaxonflow/axonflow-enterprise/issues/2277)
-
-## [1.5.2] - 2026-05-20 — 401 throttle follow-up: separate stamp file + `-32001` fail-closed carve-out
 
 ### Fixed
 
@@ -64,10 +54,11 @@
   audit hook has no fail-closed path; failing-closed on a
   post-execution audit makes no sense.
 
-### Tracking
+### Changed
 
-- [#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275)
-- [#1545](https://github.com/getaxonflow/axonflow-enterprise/issues/1545)
+- **`scripts/telemetry-ping.sh` header comment** softened from "Anonymous
+  telemetry heartbeat" to "Telemetry heartbeat" alongside the `org_id`
+  addition — the operator-supplied `ORG_ID` is not anonymized.
 
 ## [1.5.1] - 2026-05-20 — Throttle on HTTP 401 to prevent auth-storm
 
@@ -88,10 +79,6 @@
   refreshed credential is picked up without further action. Wired into
   both pre- and post-tool hooks. Fail-open semantics preserved: the
   user's tool call is not blocked while the throttle is active.
-
-### Tracking
-
-- [#2275](https://github.com/getaxonflow/axonflow-enterprise/issues/2275)
 
 ## [1.5.0] - 2026-05-19 — Terminology: `tenant_id` → `client_id` in user-facing output
 
@@ -124,10 +111,6 @@
   terminology consistently. The "Activate Pro tier" walkthrough notes
   that Stripe Checkout's custom field is still labeled "AxonFlow
   tenant ID" until that form is updated separately.
-
-### Tracking
-
-- [#2230](https://github.com/getaxonflow/axonflow-enterprise/issues/2230)
 
 ## [1.4.0] - 2026-05-09 — Decision History API + policy_version recorded on every decision + telemetry simplification
 
@@ -316,7 +299,6 @@ The full set of platform-side security fixes shipped alongside this release — 
 ### Security
 
 - `~/.config/axonflow/` and `~/.cache/axonflow/` permissions tightened to `0700` on every invocation (was: only set on creation via `mkdir -m 0700`, which left existing 0755 dirs unchanged).
-
 
 ## [0.5.2] - 2026-04-22
 
