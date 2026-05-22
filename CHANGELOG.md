@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [1.5.2] - 2026-05-20 — 401 throttle follow-up: separate stamp file + JSON-RPC auth-error fail-closed carve-out + `org_id` in telemetry heartbeat
+## [1.5.2] - 2026-05-22 — 401 throttle follow-up: separate stamp file + JSON-RPC auth-error fail-closed carve-out + `org_id` in telemetry heartbeat
 
 ### Added
 
