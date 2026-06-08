@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-06-08 — Authenticate the MCP server connection on self-hosted / Enterprise agents
+
+### Fixed
+
+- **MCP server connection now authenticates to self-hosted / Enterprise
+  (in-VPC) agents.** `mcp.json` set `X-Axonflow-Client` and `X-License-Token`
+  static headers but **no `Authorization` header**, so against an agent that
+  requires HTTP Basic auth the MCP connection arrived unauthenticated → the
+  agent 401'd → Cursor fell into OAuth discovery and died on the agent's
+  plaintext `404 page not found`, and governed tool calls were blocked. Added
+  `"Authorization": "Basic ${AXONFLOW_AUTH}"` to the static headers (Cursor
+  expands `${AXONFLOW_AUTH}` from the launching environment, same as the
+  existing `${AXONFLOW_ENDPOINT}` / `${AXONFLOW_LICENSE_TOKEN}`). For an
+  Enterprise/in-VPC agent set `AXONFLOW_AUTH=base64(org_id:license_key)` (bare
+  base64 — the header adds the `Basic ` prefix). Verified at the wire level:
+  the resulting header set returns HTTP 200 + `initialize` from a live
+  in-vpc-enterprise agent. (Distinct from Cursor's lack of a dynamic header
+  helper for per-session token refresh; `X-License-Token` is still forwarded
+  statically via env expansion.)
+
 ## [1.5.2] - 2026-05-22 — 401 throttle follow-up: separate stamp file + JSON-RPC auth-error fail-closed carve-out + `org_id` in telemetry heartbeat
 
 ### Added
