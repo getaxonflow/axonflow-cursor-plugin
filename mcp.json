@@ -5,8 +5,9 @@
       "url": "${AXONFLOW_ENDPOINT:-http://localhost:8080}/api/v1/mcp-server",
       "headers": {
         "Authorization": "Basic ${AXONFLOW_AUTH}",
-        "X-Axonflow-Client": "cursor-plugin/1.3.0",
-        "X-License-Token": "${AXONFLOW_LICENSE_TOKEN}"
+        "X-Axonflow-Client": "cursor-plugin/1.6.0",
+        "X-License-Token": "${AXONFLOW_LICENSE_TOKEN}",
+        "X-User-Token": "${AXONFLOW_USER_TOKEN}"
       }
     }
   }

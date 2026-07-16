@@ -112,6 +112,24 @@ if [ -n "$LICENSE_TOKEN" ]; then
   AUTH_HEADER+=(-H "X-License-Token: $LICENSE_TOKEN")
 fi
 
+# Per-user authorization token (axonflow-enterprise#2943, epic #2919; Cursor
+# port of axonflow-claude-plugin#107). Resolve the admin-minted per-user
+# token from env (AXONFLOW_USER_TOKEN — wins) or
+# ~/.config/axonflow/user-token.json (0600-guarded) and, when present, ship
+# it as X-User-Token so the platform resolves a VALIDATED {identity, role}
+# for this developer instead of the least-privilege attribution-only
+# fallback. Appended to AUTH_HEADER so it ships on every governed curl below
+# (check_policy + the blocked-audit audit_tool_call POST + the shell-write
+# check_output scan). Omitted entirely when unconfigured (no empty header) —
+# requests are then byte-identical to a pre-token plugin. The token value is
+# never logged.
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/user-token.sh"
+resolve_user_token
+if [ -n "${AXONFLOW_USER_TOKEN:-}" ]; then
+  AUTH_HEADER+=(-H "X-User-Token: ${AXONFLOW_USER_TOKEN}")
+fi
+
 # One-time positive disclosure when first connecting to Community SaaS. Stamp
 # is separate from telemetry so the disclosure fires exactly once per install,
 # independent of the 7-day heartbeat cadence.
@@ -293,7 +311,16 @@ if [ -n "$JSONRPC_ERROR" ]; then
   JSONRPC_CODE=$(echo "$RESPONSE" | jq -r '.error.code // 0' 2>/dev/null || echo "0")
   case "$JSONRPC_CODE" in
     -32001|-32601|-32602)
-      echo "AxonFlow governance blocked: ${JSONRPC_ERROR} (code ${JSONRPC_CODE}). Fix AxonFlow configuration to restore tool access." >&2
+      # #2943: when a per-user token was sent, name it as a likely cause of a
+      # -32001 auth failure — the platform fails closed on a presented-but-
+      # invalid X-User-Token (expired, revoked, wrong org), and the generic
+      # "fix AxonFlow configuration" guidance would send the operator down
+      # the wrong path. The token VALUE is never printed.
+      USER_TOKEN_HINT=""
+      if [ "$JSONRPC_CODE" = "-32001" ] && [ -n "${AXONFLOW_USER_TOKEN:-}" ]; then
+        USER_TOKEN_HINT=" A per-user token is configured (AXONFLOW_USER_TOKEN / user-token.json) and was sent as X-User-Token — if it is expired, revoked, or minted for a different org, the platform rejects the request; ask your admin to rotate it, or remove it to fall back to shared-credential attribution."
+      fi
+      echo "AxonFlow governance blocked: ${JSONRPC_ERROR} (code ${JSONRPC_CODE}). Fix AxonFlow configuration to restore tool access.${USER_TOKEN_HINT}" >&2
       exit 2
       ;;
     *)

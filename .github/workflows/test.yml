@@ -40,8 +40,17 @@ jobs:
           test -f LICENSE || (echo "Missing LICENSE" && exit 1)
           echo "Plugin structure valid"
 
+      - name: Run mcp.json ↔ plugin.json version-alignment gate (#2943)
+        run: bash tests/test-mcp-json-alignment.sh
+
       - name: Run hook regression tests (mock server)
         run: bash tests/test-hooks.sh
+
+      - name: Run per-user token resolver unit test (X-User-Token, #2943)
+        run: bash tests/test-user-token.sh
+
+      - name: Run X-User-Token hook-wire test (#2943)
+        run: bash tests/test-user-token-header-wire.sh
 
       - name: Run upgrade-prompt envelope-handler unit tests
         run: bash tests/test-upgrade-prompt.sh

@@ -245,6 +245,11 @@ For Evaluation License or Enterprise credentials, set both endpoint and auth:
 ```bash
 export AXONFLOW_ENDPOINT=https://your-axonflow.example.com
 export AXONFLOW_AUTH=$(echo -n "your-client-id:your-client-secret" | base64)
+
+# Optional (Enterprise): admin-minted per-user token for a VERIFIED
+# {identity, role} — role-scoped access instead of client-scoped-only
+# attribution. See "Per-user authorization token" below.
+export AXONFLOW_USER_TOKEN=<token minted by your org admin>
 ```
 
 ## Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
@@ -345,6 +350,66 @@ The script prompts for the email the tenant was originally registered with, requ
 In the chat, use the `/recover-credentials` skill to have the agent walk you through the same flow. The skill instructs the agent to invoke the script via the Shell tool; you fill in the email and token in the integrated terminal.
 
 Recovery is for **free-tier credential loss only**. If you lose your Pro `AXONFLOW_LICENSE_TOKEN`, recover it from the original Stripe / billing email rather than this script.
+
+---
+
+## Per-user authorization token (`AXONFLOW_USER_TOKEN`)
+
+By default, a fleet of Cursor developers sharing one `AXONFLOW_AUTH` credential
+is attributed as the *tenant*, not as individual people. The **per-user token**
+fixes that with a verified identity. On an Enterprise platform that validates
+per-user tokens (first platform release after v9.9.0), an org admin mints a
+token per developer (`POST /api/v1/admin/organizations/{org_id}/user-tokens`,
+or OIDC tokens from your IdP), and the plugin sends it as the `X-User-Token`
+header on every governed request — the MCP connection and both hooks. The
+platform validates it (signature, expiry, revocation, org binding) and
+resolves a **non-forgeable `{identity, role}`** for the developer: audit rows
+attribute to the verified identity, and role-scoped features (e.g. who can
+read the whole tenant's audit trail vs. only their own rows) key on the
+validated role instead of treating every fleet developer identically.
+
+Resolution precedence on the **hook surfaces** (`pre-tool-check.sh`,
+`post-tool-audit.sh` — mirrors the license-token discipline):
+
+1. **`AXONFLOW_USER_TOKEN`** — set per developer via managed settings / MDM
+   (fleet) or the shell profile (individual). Wins outright.
+2. **`~/.config/axonflow/user-token.json`** — `{"token": "<minted token>"}`,
+   written by your fleet's provisioning tooling. The file **must be `0600`**
+   (owner read/write only); the plugin refuses a group/world-readable token
+   file with a stderr warning rather than loading it silently:
+
+   ```bash
+   umask 077
+   printf '{"token":"%s"}' "<minted token>" > ~/.config/axonflow/user-token.json
+   chmod 600 ~/.config/axonflow/user-token.json
+   ```
+
+3. **Unset** — no `X-User-Token` header is sent (never an empty header) and
+   requests are exactly what a pre-1.6 plugin sends; the platform keeps its
+   least-privilege attribution path.
+
+> **Cursor-specific: the MCP connection is env-var-only.** The MCP server
+> connection Cursor itself opens uses `mcp.json`'s *static* headers with plain
+> env expansion — Cursor has no dynamic header helper — so that plane reads
+> `${AXONFLOW_USER_TOKEN}` from the environment **only**: the `0600` file
+> fallback covers the hook surfaces, not the MCP connection. When the env var
+> is unset, Cursor expands the header to an empty value, which the platform
+> treats as absent — unconfigured users are unaffected. But a **malformed**
+> env value (mis-paste with whitespace/quotes) is sent **raw** by Cursor on
+> this plane — the platform then fails closed with `401` on MCP traffic until
+> you fix or remove the env var. The hooks drop a malformed value locally and
+> warn on stderr instead. Fleet provisioning that needs the MCP plane covered
+> must therefore set the env var (MDM / managed settings), not just the file.
+
+The token is a **credential**: the plugin never logs or echoes its value, and
+on the hook surfaces a malformed candidate (whitespace/control/quote bytes — a
+mis-paste) is dropped locally with a diagnostic instead of being sent. Note
+the platform **fails closed** on a presented-but-invalid token (expired,
+revoked, minted for a different org): governed calls are then blocked until
+the token is rotated or removed — the block message names the token as the
+likely cause. Rotation/revocation is admin-driven on the platform;
+re-provisioning the new token to the developer's env/file is all the plugin
+needs.
 
 ---
 

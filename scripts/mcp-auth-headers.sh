@@ -58,9 +58,27 @@ fi
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/client-header.sh"
 
+# Per-user authorization token (axonflow-enterprise#2943, epic #2919): resolve
+# the admin-minted token (env AXONFLOW_USER_TOKEN wins, else 0600-guarded
+# ~/.config/axonflow/user-token.json) so MCP-server traffic carries
+# X-User-Token and the platform resolves a validated {identity, role} for the
+# developer. Same env-then-file precedence as the hooks. SYNC NOTE: the LIVE
+# MCP plane is Cursor's STATIC env expansion in mcp.json (Cursor has no
+# headersHelper — cursor#43 tracks that gap; this script is the kept-in-sync
+# reference impl). The static plane sends `${AXONFLOW_USER_TOKEN}` raw: it
+# cannot read the 0600 file and cannot run the wire-safety strip-check. An
+# unset env var expands to an EMPTY header value, which the platform treats
+# as absent, so unconfigured users are unaffected on that plane too.
+# tests/test-user-token.sh pins this reference impl's behavior;
+# tests/test-mcp-json-alignment.sh pins the static mcp.json template.
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/user-token.sh"
+resolve_user_token
+
 AUTH="${AXONFLOW_AUTH:-}"
 LICENSE_TOKEN="${AXONFLOW_LICENSE_TOKEN:-}"
 CLIENT_HEADER="${AXONFLOW_CLIENT_HEADER}"
+USER_TOKEN="${AXONFLOW_USER_TOKEN:-}"
 
 # Build the JSON header object via jq when available so token values are
 # json-escaped correctly. Without jq, fall back to a string-concat path
@@ -68,22 +86,26 @@ CLIENT_HEADER="${AXONFLOW_CLIENT_HEADER}"
 # would need careful escaping so we drop it on this fallback — per-call
 # hooks still ship it).
 if command -v jq &>/dev/null; then
-  if [ -n "$AUTH" ] && [ -n "$LICENSE_TOKEN" ]; then
-    jq -nc --arg auth "$AUTH" --arg lt "$LICENSE_TOKEN" --arg ch "$CLIENT_HEADER" \
-      '{"Authorization": ("Basic " + $auth), "X-License-Token": $lt, "X-Axonflow-Client": $ch}'
-  elif [ -n "$AUTH" ]; then
-    jq -nc --arg auth "$AUTH" --arg ch "$CLIENT_HEADER" \
-      '{"Authorization": ("Basic " + $auth), "X-Axonflow-Client": $ch}'
-  elif [ -n "$LICENSE_TOKEN" ]; then
-    jq -nc --arg lt "$LICENSE_TOKEN" --arg ch "$CLIENT_HEADER" \
-      '{"X-License-Token": $lt, "X-Axonflow-Client": $ch}'
-  else
-    jq -nc --arg ch "$CLIENT_HEADER" '{"X-Axonflow-Client": $ch}'
-  fi
+  jq -nc \
+    --arg auth "$AUTH" --arg lt "$LICENSE_TOKEN" --arg ch "$CLIENT_HEADER" --arg ut "$USER_TOKEN" \
+    '{}
+     | (if $auth != "" then . + {"Authorization": ("Basic " + $auth)} else . end)
+     | (if $lt   != "" then . + {"X-License-Token": $lt} else . end)
+     | (if $ut   != "" then . + {"X-User-Token": $ut} else . end)
+     | . + {"X-Axonflow-Client": $ch}'
 else
+  # X-User-Token is safe to hand-quote on the no-jq path: resolve_user_token
+  # only exports values that pass the wire-safety check (no quote/backslash/
+  # whitespace/control bytes), and the env path needs no jq. (X-License-Token
+  # stays dropped here — its resolver requires jq for the file path and its
+  # value is not strip-checked.)
+  ut_frag=""
+  if [ -n "$USER_TOKEN" ]; then
+    ut_frag=", \"X-User-Token\": \"$USER_TOKEN\""
+  fi
   if [ -n "$AUTH" ]; then
-    echo "{\"Authorization\": \"Basic $AUTH\", \"X-Axonflow-Client\": \"$CLIENT_HEADER\"}"
+    echo "{\"Authorization\": \"Basic $AUTH\"${ut_frag}, \"X-Axonflow-Client\": \"$CLIENT_HEADER\"}"
   else
-    echo "{\"X-Axonflow-Client\": \"$CLIENT_HEADER\"}"
+    echo "{\"X-Axonflow-Client\": \"$CLIENT_HEADER\"${ut_frag}}"
   fi
 fi
