@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-17 — per-user authorization token (X-User-Token) on every governed request
+
+### Added
+
+- **The plugin now sends the admin-minted per-user token as `X-User-Token` on every governed request** (Cursor port of the Claude Code plugin's 1.10.0 capability; epic per-user identity + role on the fleet plane). The platform's fleet plane authenticates the *tenant* with the shared Basic credential; the per-user token additionally yields a **validated, non-forgeable `{identity, role}`** for the developer behind the session, which per-user read scoping and audit attribution key on. Covered send surfaces — all four header-assembly paths:
+  - `mcp.json` static `headers` (the MCP connection Cursor opens; env-expanded `${AXONFLOW_USER_TOKEN}`),
+  - `scripts/mcp-auth-headers.sh` (the readable reference impl, kept in sync),
+  - `scripts/pre-tool-check.sh` (`check_policy` + the blocked-audit `audit_tool_call` POST + the shell-write `check_output` scan),
+  - `scripts/post-tool-audit.sh` (`audit_tool_call` + `check_output`).
+- **Resolution order** (new `scripts/user-token.sh`, mirrors the license-token discipline): `AXONFLOW_USER_TOKEN` env var (managed settings / MDM env block — wins) → `~/.config/axonflow/user-token.json` (`{"token": "<minted token>"}`). The file is **0600-guarded**: non-0600 permissions are rejected with a stderr warning, never loaded silently. Tokens are minted by an org admin via the platform admin user-tokens API.
+- **Strictly additive and conditional**: when no token is configured, the header is omitted entirely on the hook surfaces (never empty) and every request is byte-identical to a 1.5.x plugin — the platform keeps its existing least-privilege attribution path.
+- **Cursor-specific MCP-plane limitation (documented in README):** the MCP connection uses Cursor's *static* env expansion — no headersHelper — so that plane reads `AXONFLOW_USER_TOKEN` from the environment only (no 0600-file fallback, no local wire-safety check). Unset expands to an empty header value, which the platform treats as absent; a malformed env value is sent raw and the platform fails closed with 401 until it is fixed or removed.
+- **Wire-safety guard, never logged**: on the hook surfaces, a candidate token containing whitespace, control bytes, quotes, or backslashes is dropped locally with a diagnostic that never prints the value — the platform fails closed on a presented-but-invalid token, so sending a mangled credential would turn every governed call into an auth denial. For the same reason, the hooks' `-32001` fail-closed block message now names a configured per-user token as a likely cause (expired / revoked / wrong org) instead of only pointing at `AXONFLOW_AUTH`.
+- Tests: `tests/test-user-token.sh` (resolver unit + reference-impl wire shape), `tests/test-user-token-header-wire.sh` (drives the ACTUAL hooks against a header-capturing agent, asserting present-when-configured / absent-when-not on all five governed curls), `tests/test-mcp-json-alignment.sh` (NEW CI gate: `mcp.json`'s `X-Axonflow-Client` version must equal `plugin.json`'s + the `X-User-Token` template must exist), `runtime-e2e/user-token/` (live-stack, no mocks), and an X-User-Token leg in `runtime-e2e/mcp-enterprise-auth/`.
+
+### Fixed
+
+- **`mcp.json` reported a stale client version on the wire.** The static `X-Axonflow-Client` header was hardcoded at `cursor-plugin/1.3.0` while the plugin was at 1.5.3 — every MCP-connection request misreported the plugin version to the platform's per-client version telemetry. Now `cursor-plugin/1.6.0`, and the new `tests/test-mcp-json-alignment.sh` CI gate keeps it locked to `plugin.json` so the drift cannot recur. (Same class as the Claude Code plugin's on-wire version fix.)
+
 ## [1.5.3] - 2026-06-08 — Authenticate the MCP server connection on self-hosted / Enterprise agents
 
 ### Fixed

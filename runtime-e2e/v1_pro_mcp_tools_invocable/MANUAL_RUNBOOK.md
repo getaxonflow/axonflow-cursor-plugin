@@ -31,7 +31,7 @@ actually surfaces and dispatches the 5 tools.
          "url": "https://try.getaxonflow.com/api/v1/mcp-server",
          "headers": {
            "Authorization": "$AUTH",
-           "X-Axonflow-Client": "cursor-plugin/1.3.0"
+           "X-Axonflow-Client": "cursor-plugin/1.6.0"
          }
        }
      }
