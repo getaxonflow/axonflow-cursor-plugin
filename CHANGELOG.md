@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`audit_tool_call` now sends `caller_name` instead of `tool_type` to identify the calling plugin.** The `tool_type` field was misleadingly named — it identified WHICH CLIENT made the call, not a tool type — and the platform now accepts a correctly-named `caller_name` field for this purpose (`tool_type` still works as a deprecated legacy fallback). Updated in `scripts/pre-tool-check.sh` and `scripts/post-tool-audit.sh`, both still sending the value `"cursor"`.
+
 ## [1.6.0] - 2026-07-17 — per-user authorization token (X-User-Token) on every governed request
 
 ### Added
