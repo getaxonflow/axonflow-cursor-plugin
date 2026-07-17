@@ -10,11 +10,12 @@
 # per-user token is configured (env var AND 0600 file legs) — and DON'T when
 # it is not (the common fleet state today), in which case the emitted header
 # key set must be exactly what an unconfigured 1.5.x plugin sends. Covers
-# both hook surfaces, and BOTH request classes on the pre-tool plane
-# (check_policy plus the fire-and-forget blocked-audit POST, which reuse
-# AUTH_HEADER):
-#   - pre-tool-check.sh  → check_policy + audit_tool_call   (PreToolUse)
-#   - post-tool-audit.sh → audit_tool_call + check_output   (PostToolUse)
+# both hook surfaces and ALL FIVE governed request classes (each keyed by its
+# JSON-RPC id in the capture, so every curl is pinned individually):
+#   - pre-tool-check.sh  → check_policy (hook-pre) + the blocked-audit POST
+#     (hook-audit-blocked) + the shell-write check_output scan (hook-pii)
+#   - post-tool-audit.sh → audit_tool_call (hook-audit) + check_output
+#     (hook-scan)
 #
 # Also pins that the hooks NEVER leak the token value to stdout (the hook
 # protocol) or stderr (operator-visible diagnostics).
@@ -38,7 +39,7 @@ if ! command -v python3 >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
 fi
 
 WORK="$(mktemp -d)"
-CAP="$WORK/headers.log"    # one JSON object of request headers per line
+CAP="$WORK/headers.log"    # one {"rpc_id":…,"headers":{…}} JSON object per line
 : > "$CAP"
 cleanup() { [ -n "${SRV_PID:-}" ] && kill "$SRV_PID" 2>/dev/null; wait 2>/dev/null; rm -rf "$WORK"; }
 trap cleanup EXIT
@@ -46,7 +47,9 @@ trap cleanup EXIT
 # Header-capturing mock agent. Returns a BLOCK decision when MOCK_BLOCK=1 so
 # pre-tool-check.sh also fires its backgrounded audit_tool_call POST —
 # proving the token rides AUTH_HEADER onto EVERY governed curl, not just the
-# first one.
+# first one. Each capture line is {"rpc_id": <JSON-RPC id>, "headers": {...}}
+# so per-curl assertions (e.g. the hook-pii shell-write scan) can key on the
+# specific request class, not just the aggregate.
 cat > "$WORK/server.py" <<'PY'
 import http.server, json, os, sys
 CAP = os.environ["CAP_FILE"]
@@ -55,9 +58,13 @@ class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_POST(self):
         n = int(self.headers.get('Content-Length', 0))
-        _ = self.rfile.read(n) if n else b''
+        raw = self.rfile.read(n) if n else b''
+        try:
+            rpc_id = json.loads(raw).get("id", "")
+        except Exception:
+            rpc_id = ""
         with open(CAP, 'a') as f:
-            f.write(json.dumps({k: v for k, v in self.headers.items()}) + "\n")
+            f.write(json.dumps({"rpc_id": rpc_id, "headers": {k: v for k, v in self.headers.items()}}) + "\n")
         if BLOCK:
             result = {"allowed": False, "block_reason": "wire-test block", "policies_evaluated": 1}
         else:
@@ -98,11 +105,19 @@ HOOK_STDOUT="$WORK/hook-stdout.log"
 HOOK_STDERR="$WORK/hook-stderr.log"
 RUN_N=0
 run_hook() {
-  local hook="$1" mode="$2"
+  local hook="$1" mode="$2" kind="${3:-write}"
   RUN_N=$((RUN_N+1))
   local run_home="$WORK/home-$RUN_N"
   mkdir -p "$run_home"
-  local input='{"tool_name":"Write","tool_input":{"file_path":"/tmp/x.txt","content":"hello world"},"tool_response":{"success":true}}'
+  local input
+  if [ "$kind" = "bash-redirect" ]; then
+    # A shell write: the ONLY payload class that reaches the pre-tool hook-pii
+    # check_output scan (the 5th governed curl) — Shell/Bash + a redirect with
+    # >5 chars of extractable content.
+    input='{"tool_name":"Bash","tool_input":{"command":"echo hello world from wire > /tmp/wire-out.txt"},"tool_response":{"success":true}}'
+  else
+    input='{"tool_name":"Write","tool_input":{"file_path":"/tmp/x.txt","content":"hello world"},"tool_response":{"success":true}}'
+  fi
   local -a extra_env=()
   case "$mode" in
     env)
@@ -128,11 +143,20 @@ captured_count() { wc -l < "$CAP" | tr -d ' '; }
 every_captured_has_token() {
   local total with_token
   total="$(captured_count)"
-  with_token="$(jq -s --arg w "$TOKEN" '[.[] | select((."X-User-Token" // ."x-user-token") == $w)] | length' "$CAP")"
+  with_token="$(jq -s --arg w "$TOKEN" '[.[] | select((.headers."X-User-Token" // .headers."x-user-token") == $w)] | length' "$CAP")"
   [ "$total" -gt 0 ] && [ "$with_token" = "$total" ]
 }
 any_captured_has_token_key() {
-  jq -e 'select(has("X-User-Token") or has("x-user-token"))' "$CAP" >/dev/null 2>&1
+  jq -e 'select(.headers | (has("X-User-Token") or has("x-user-token")))' "$CAP" >/dev/null 2>&1
+}
+# rpc_captured_with_token <rpc-id> — that specific request class was captured
+# AND carried the token. rpc_captured_tokenless <rpc-id> — captured and did NOT.
+rpc_captured_with_token() {
+  [ "$(jq -s --arg id "$1" --arg w "$TOKEN" '[.[] | select(.rpc_id == $id and ((.headers."X-User-Token" // .headers."x-user-token") == $w))] | length' "$CAP")" -ge 1 ]
+}
+rpc_captured_tokenless() {
+  [ "$(jq -s --arg id "$1" '[.[] | select(.rpc_id == $id)] | length' "$CAP")" -ge 1 ] \
+    && [ "$(jq -s --arg id "$1" '[.[] | select(.rpc_id == $id and (.headers | (has("X-User-Token") or has("x-user-token"))))] | length' "$CAP")" -eq 0 ]
 }
 no_leak_in_hook_output() {
   ! grep -qF "$TOKEN" "$HOOK_STDOUT" "$HOOK_STDERR" 2>/dev/null
@@ -159,7 +183,7 @@ no_leak_in_hook_output && pass "pre-tool-check.sh never leaks the token to stdou
   || fail "token value leaked into hook stdout/stderr"
 # Snapshot the configured run's header-key set (minus the token header) for
 # the no-other-drift comparison against the unconfigured run below.
-CONFIGURED_KEYS="$(jq -s '[.[] | keys[]] | unique - ["X-User-Token","x-user-token"] | sort' "$CAP")"
+CONFIGURED_KEYS="$(jq -s '[.[] | .headers | keys[]] | unique - ["X-User-Token","x-user-token"] | sort' "$CAP")"
 
 # --- pre-tool-check.sh: 0600 file token ---
 : > "$CAP"
@@ -180,17 +204,38 @@ if any_captured_has_token_key; then
 else
   pass "pre-tool-check.sh omits X-User-Token when unconfigured"
 fi
-UNEXPECTED="$(jq -s '[.[] | keys[]] | unique - ["Accept","Accept-Encoding","Content-Length","Content-Type","Expect","Host","User-Agent","X-Axonflow-Client","X-License-Token","Authorization"]' "$CAP")"
+UNEXPECTED="$(jq -s '[.[] | .headers | keys[]] | unique - ["Accept","Accept-Encoding","Content-Length","Content-Type","Expect","Host","User-Agent","X-Axonflow-Client","X-License-Token","Authorization"]' "$CAP")"
 if [ "$UNEXPECTED" = "[]" ]; then
   pass "unconfigured pre-tool-check.sh header set has no new headers (byte-identical to 1.5.x)"
 else
   fail "unconfigured run sent unexpected headers: $UNEXPECTED"
 fi
-UNCONFIGURED_KEYS="$(jq -s '[.[] | keys[]] | unique | sort' "$CAP")"
+UNCONFIGURED_KEYS="$(jq -s '[.[] | .headers | keys[]] | unique | sort' "$CAP")"
 if [ "$CONFIGURED_KEYS" = "$UNCONFIGURED_KEYS" ]; then
   pass "configured header keys == unconfigured keys + X-User-Token only (no other drift)"
 else
   fail "header-key drift beyond X-User-Token: configured-minus-token=$CONFIGURED_KEYS unconfigured=$UNCONFIGURED_KEYS"
+fi
+
+# --- pre-tool-check.sh: Bash shell-write payload on the ALLOW path → the
+# hook-pii check_output scan (the 5th governed curl) fires and must carry the
+# token when configured, and omit it when not. This is the one request class
+# the Write payload above can never reach — pinned individually via rpc_id so
+# a future refactor moving this curl off AUTH_HEADER cannot go uncaught. ---
+start_server 0
+: > "$CAP"
+run_hook "$PRE_HOOK" env bash-redirect
+if rpc_captured_with_token "hook-pre" && rpc_captured_with_token "hook-pii"; then
+  pass "pre-tool-check.sh shell-write leg: check_policy AND the hook-pii check_output scan both carry X-User-Token (env leg)"
+else
+  fail "shell-write leg missing X-User-Token on hook-pre/hook-pii: $(cat "$CAP")"
+fi
+: > "$CAP"
+run_hook "$PRE_HOOK" none bash-redirect
+if rpc_captured_tokenless "hook-pii"; then
+  pass "pre-tool-check.sh hook-pii scan omits X-User-Token when unconfigured"
+else
+  fail "hook-pii scan absent or sent X-User-Token when unconfigured: $(cat "$CAP")"
 fi
 
 # --- post-tool-audit.sh: env token → audit_tool_call + check_output carry it ---
