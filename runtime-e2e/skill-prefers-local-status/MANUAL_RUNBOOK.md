@@ -45,7 +45,7 @@ Bash without calling the MCP tool.
    curl -sS -o /dev/null -w 'HTTP=%{http_code}\n' \
      -X POST https://try.getaxonflow.com/api/v1/audit/tool-call \
      -u "$T:$S" -H 'Content-Type: application/json' \
-     -d '{"tool_name":"probe","caller_name":"x","input":{},"success":true}'
+     -d '{"tool_name":"probe","caller_name":"x","tool_type":"x","input":{},"success":true}'
    ```
    Expect `HTTP=200` or `HTTP=201`. If `HTTP=401`, register a fresh
    tenant via `POST /api/v1/register` and overwrite the on-disk

@@ -368,6 +368,7 @@ if [ "$ALLOWED" = "false" ]; then
           arguments: {
             tool_name: $tn,
             caller_name: "cursor",
+            tool_type: "cursor",
             input: {statement: $stmt},
             output: {policy_decision: "blocked", block_reason: $reason, policies_evaluated: $policies},
             success: false,
