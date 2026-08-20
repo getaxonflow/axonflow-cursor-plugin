@@ -7,9 +7,10 @@
 # recently and checked in EVIDENCE.md alongside it.
 #
 # Each per-feature test.sh sources this and calls cursor_gate with the
-# MCP tool name the runbook exercises (so the gate verifies the tool
-# is actually advertised by the platform before asking a human to run
-# a doomed manual test).
+# MCP tool name(s) the runbook exercises (so the gate verifies every
+# tool the manual run drives is actually advertised by the platform
+# before asking a human to run a doomed manual test). Pass one argument
+# per tool; the gate fails if any of them is not advertised.
 
 set -uo pipefail
 
@@ -18,10 +19,15 @@ set -uo pipefail
 : "${AXONFLOW_CLIENT_SECRET:=demo-secret}"
 : "${EVIDENCE_FRESHNESS_DAYS:=60}"
 
-# cursor_gate <script-dir> <mcp-tool-name>
+# cursor_gate <script-dir> <mcp-tool-name>...
 cursor_gate() {
   local script_dir="$1"
-  local mcp_tool="$2"
+  shift
+  local mcp_tools=("$@")
+  if [ "${#mcp_tools[@]}" -eq 0 ]; then
+    echo "FAIL: cursor_gate called without any MCP tool name"
+    return 1
+  fi
   local plugin_dir
   plugin_dir="$(cd "$script_dir/../.." && pwd)"
   local errors=0
@@ -60,12 +66,15 @@ cursor_gate() {
       -H "Mcp-Session-Id: $session_id" \
       -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
       "$AXONFLOW_ENDPOINT/api/v1/mcp-server")
-    if printf '%s' "$list_resp" | grep -q "\"name\":\"$mcp_tool\""; then
-      echo "PASS: MCP server advertises $mcp_tool"
-    else
-      echo "FAIL: MCP server did not advertise $mcp_tool — wiring is wrong"
-      errors=$((errors + 1))
-    fi
+    local mcp_tool
+    for mcp_tool in "${mcp_tools[@]}"; do
+      if printf '%s' "$list_resp" | grep -q "\"name\":\"$mcp_tool\""; then
+        echo "PASS: MCP server advertises $mcp_tool"
+      else
+        echo "FAIL: MCP server did not advertise $mcp_tool - wiring is wrong"
+        errors=$((errors + 1))
+      fi
+    done
   fi
 
   if [ -f "$plugin_dir/mcp.json" ]; then
@@ -113,5 +122,5 @@ cursor_gate() {
     return 1
   fi
   echo ""
-  echo "PASS: cursor $mcp_tool runtime gate — manual evidence on file is fresh"
+  echo "PASS: cursor ${mcp_tools[*]} runtime gate - manual evidence on file is fresh"
 }
