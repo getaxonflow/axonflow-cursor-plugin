@@ -1,4 +1,4 @@
-# Manual runbook — Cursor `governance-lifecycle` runtime verification
+# Manual runbook - Cursor `governance-lifecycle` runtime verification
 
 Cursor's agent runs only inside the IDE. This runbook is the rule-#1
 runtime verification for the governance-lifecycle feature. Run it once before tagging
@@ -28,12 +28,14 @@ manual verification from rotting silently.
 
 3. **Open a chat panel in Composer / Agent mode** (the agent surface).
 
-4. **Send the prompt verbatim:**
+4. **Send the prompt verbatim** (substitute today's date into the
+   override_reason):
 
-   > Use the `search_audit_events + list_overrides (chained)` MCP tool from the axonflow MCP server with arguments: search_audit_events with limit=3, then list_overrides with no args. The platform will respond — expected outcome: Both tools dispatch in the same conversation; agent reports combined audit_total + override_count. Output exactly `SMOKE_RESULT: ` followed by a one-line JSON summary of what happened.
+   > Run a 5-step W2 governance lifecycle smoke test using the axonflow MCP server. Step 1: call list_overrides with no arguments and note count. Step 2: call create_override with policy_id="sys_pii_email", policy_type="static", override_reason="cursor-lifecycle-YYYY-MM-DD". Capture the returned id. Step 3: call list_overrides again, note new count. Step 4: call delete_override with that id. Step 5: call list_overrides again. Output exactly SMOKE_RESULT: followed by single-line JSON like SMOKE_RESULT: {"baseline":N,"after_create":N,"after_revoke":N,"created_id":"..."}.
 
-5. **Wait for the agent to invoke the tool.** Cursor surfaces tool
-   calls inline in the chat with a "Tool used: search_audit_events + list_overrides (chained)" annotation.
+5. **Wait for the agent to invoke the tools.** Cursor surfaces tool
+   calls inline in the chat with "Ran List Overrides in axonflow" style
+   annotations; expect five of them (list, create, list, delete, list).
 
 6. **Capture the run into `EVIDENCE.md` using this template:**
 
@@ -49,16 +51,19 @@ manual verification from rotting silently.
 
 <paste the prompt you sent>
 
-## Tool call (Cursor's annotation)
+## Tool calls (Cursor's annotations)
 
 ```
-Tool: search_audit_events + list_overrides (chained)
-Arguments: { ... }
+Ran List Overrides    in axonflow
+Ran Create Override   in axonflow
+Ran List Overrides    in axonflow
+Ran Delete Override   in axonflow
+Ran List Overrides    in axonflow
 ```
 
-## Tool result (Cursor's annotation)
+## Tool results (Cursor's annotations)
 
-<paste the raw tool result>
+<paste the raw tool results>
 
 ## Agent reply
 
@@ -66,8 +71,10 @@ SMOKE_RESULT: { ... }
 
 ## Pass/fail
 
-- [ ] Cursor invoked search_audit_events + list_overrides (chained) through its MCP runtime
-- [ ] Tool result returned without is_error: true (or returned a
+- [ ] Cursor invoked list_overrides (three times), create_override and
+      delete_override through its MCP runtime
+- [ ] Override count went UP after create and back DOWN after revoke
+- [ ] Tool results returned without is_error: true (or returned a
       structured negative for fabricated/non-applicable inputs)
 - [ ] Agent emitted the SMOKE_RESULT marker
 ```

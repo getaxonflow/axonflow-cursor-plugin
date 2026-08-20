@@ -10,4 +10,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=../_lib/cursor-gate.sh
 source "$SCRIPT_DIR/../_lib/cursor-gate.sh"
-cursor_gate "$SCRIPT_DIR" "search_audit_events"
+# The lifecycle this directory covers is create -> list -> revoke, and that
+# is what MANUAL_RUNBOOK.md drives and EVIDENCE.md records (list_overrides
+# three times, create_override, delete_override). The gate previously named
+# search_audit_events (#87), so it stayed green if any override tool stopped
+# being advertised: exactly the wiring regression it exists to catch.
+cursor_gate "$SCRIPT_DIR" "create_override" "list_overrides" "delete_override"
