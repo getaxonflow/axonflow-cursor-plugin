@@ -66,3 +66,12 @@ jobs:
 
       - name: Run V1 paid-tier wireup runtime test (X-License-Token + recovery)
         run: bash tests/e2e/runtime-license-token-and-recovery.sh
+
+      # #3619. Two steps on purpose: the matrix asserts the behaviour, the gate
+      # asserts the matrix can actually go red. A green matrix alone would not
+      # distinguish "the field works" from "nothing is being read off the wire".
+      - name: "Run license_tier heartbeat matrix (round-trip + fail-open, #3619)"
+        run: bash tests/telemetry-license-tier/run.sh
+
+      - name: "Run license_tier mutation gate (the matrix must be able to fail, #3619)"
+        run: bash tests/telemetry-license-tier/mutation_gate.sh
