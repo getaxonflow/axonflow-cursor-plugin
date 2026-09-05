@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.0] - 2026-09-05
+
+### Added
+
+- **The plugin now declares what it can enforce** (ADR-065 capability handshake; getaxonflow/axonflow-enterprise#3763). Set `AXONFLOW_PEP_AUDIENCE` to the audience your AxonFlow decision proofs are bound to, and every governed call carries `X-Axonflow-PEP-Handshake`: a short document naming this enforcement point and the obligation types it can discharge. A platform running v10.4.0 or later that would attach a mandatory obligation this plugin has declared it cannot carry out refuses the request instead of handing the content over and assuming the plugin will cope.
+- **Off by default, and absent rather than empty when off.** Leave `AXONFLOW_PEP_AUDIENCE` unset and no header is sent at all, so the plugin behaves byte for byte as 1.7.0 against every platform version. That distinction is load bearing: a header that is present with an empty value is malformed to the platform and would refuse the call, which an absent header does not, so both the MCP session helper and the per-call hooks omit the key entirely rather than emitting a blank one.
+- **The plugin declares no capabilities, and that is the honest answer.** A redaction obligation is discharged by substituting the platform's engine-masked text for the original, and AxonFlow does not permit a client to redact for itself. This plugin's hooks submit a statement and act on the verdict; they perform no substitution, so the plugin cannot establish that such an obligation would be discharged and does not claim it can. A declaration describes what an enforcement point can do rather than what it should do.
+- **A malformed `AXONFLOW_PEP_AUDIENCE` builds no handshake and says so on stderr**, rather than silently disabling itself and leaving an operator believing a control is in force.
+
 ## [Unreleased]
 
 ### Added

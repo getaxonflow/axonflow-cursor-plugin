@@ -85,15 +85,29 @@ USER_TOKEN="${AXONFLOW_USER_TOKEN:-}"
 # (Authorization + X-Axonflow-Client are simple strings; X-License-Token
 # would need careful escaping so we drop it on this fallback — per-call
 # hooks still ship it).
+# ADR-065 capability handshake (axonflow-enterprise#3763). Sets
+# AXONFLOW_PEP_HANDSHAKE only when AXONFLOW_PEP_AUDIENCE is configured.
+# shellcheck disable=SC1091
+. "${SCRIPT_DIR}/pep-handshake.sh"
+
 if command -v jq &>/dev/null; then
   jq -nc \
     --arg auth "$AUTH" --arg lt "$LICENSE_TOKEN" --arg ch "$CLIENT_HEADER" --arg ut "$USER_TOKEN" \
+    --arg hs "${AXONFLOW_PEP_HANDSHAKE:-}" \
     '{}
      | (if $auth != "" then . + {"Authorization": ("Basic " + $auth)} else . end)
      | (if $lt   != "" then . + {"X-License-Token": $lt} else . end)
      | (if $ut   != "" then . + {"X-User-Token": $ut} else . end)
+     | (if $hs   != "" then . + {"X-Axonflow-PEP-Handshake": $hs} else . end)
      | . + {"X-Axonflow-Client": $ch}'
 else
+  # X-Axonflow-PEP-Handshake is DROPPED on this path, deliberately and for the
+  # same reason X-License-Token is: without jq the value is not json-escaped,
+  # and a mangled handshake is MALFORMED to the platform and refuses the
+  # request. Omitting it is the pre-handshake behaviour and is always safe;
+  # emitting a broken one would 400 every governed call. The per-call hooks
+  # still ship it, and they build it from the same script.
+  #
   # X-User-Token is safe to hand-quote on the no-jq path: resolve_user_token
   # only exports values that pass the wire-safety check (no quote/backslash/
   # whitespace/control bytes), and the env path needs no jq. (X-License-Token
