@@ -368,7 +368,7 @@ DENY_EXIT=$(pretooluse_exit_code "deny-me operation")
 [ "$DENY_EXIT" = "2" ] && pass "Deny: preToolUse exited 2 (block)" \
   || fail "Deny: preToolUse exit code was $DENY_EXIT (expected 2)"
 
-if echo "$DENY_STDERR" | grep -q "policy violation\|stub-deny"; then
+if echo "$DENY_STDERR" | grep "policy violation\|stub-deny" >/dev/null; then
   pass "Deny: preToolUse stderr surfaced block reason"
 else
   fail "Deny: preToolUse stderr missing block reason: $DENY_STDERR"

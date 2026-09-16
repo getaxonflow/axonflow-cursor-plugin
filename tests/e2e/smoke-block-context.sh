@@ -52,15 +52,15 @@ if [ "$EXIT_CODE" != "2" ]; then
   echo "FAIL: expected exit 2 (Cursor deny semantics), got $EXIT_CODE"
   errors=$((errors + 1))
 fi
-if ! echo "$STDERR_OUT" | grep -qE "AxonFlow policy violation"; then
+if ! echo "$STDERR_OUT" | grep -E "AxonFlow policy violation" >/dev/null; then
   echo "FAIL: stderr missing 'AxonFlow policy violation' prefix"
   errors=$((errors + 1))
 fi
-if ! echo "$STDERR_OUT" | grep -qE "decision:"; then
+if ! echo "$STDERR_OUT" | grep -E "decision:" >/dev/null; then
   echo "FAIL: stderr missing 'decision:' marker (Plugin Batch 1 richer context)"
   errors=$((errors + 1))
 fi
-if ! echo "$STDERR_OUT" | grep -qE "risk:"; then
+if ! echo "$STDERR_OUT" | grep -E "risk:" >/dev/null; then
   echo "FAIL: stderr missing 'risk:' marker (Plugin Batch 1 richer context)"
   errors=$((errors + 1))
 fi

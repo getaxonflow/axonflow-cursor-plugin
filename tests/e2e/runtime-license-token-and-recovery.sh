@@ -235,7 +235,7 @@ if [ "$NO_TOKEN_REQUESTS_WITH_HEADER" = "0" ]; then
 else
   fail "free-tier path leaked $NO_TOKEN_REQUESTS_WITH_HEADER X-License-Token header(s)"
 fi
-if echo "$NO_TOKEN_STDERR" | grep -q "Pro tier active"; then
+if echo "$NO_TOKEN_STDERR" | grep "Pro tier active" >/dev/null; then
   fail "free-tier canary should NOT advertise 'Pro tier active'"
 else
   pass "free-tier canary correctly omits 'Pro tier active'"
@@ -257,7 +257,7 @@ else
   echo "    captured headers:"
   jq -c '.headers' < "$CAPTURE_FILE" | sed 's/^/      /'
 fi
-if echo "$ENV_STDERR" | grep -q "Pro tier active"; then
+if echo "$ENV_STDERR" | grep "Pro tier active" >/dev/null; then
   pass "Pro-tier canary surfaced on stderr"
 else
   fail "Pro-tier canary missing from stderr"
@@ -286,7 +286,7 @@ else
   fail "file-sourced license token did NOT reach the wire"
   echo "    captured: $(jq -c '.headers' < "$CAPTURE_FILE")"
 fi
-if echo "$FILE_STDERR" | grep -q "Pro tier active"; then
+if echo "$FILE_STDERR" | grep "Pro tier active" >/dev/null; then
   pass "Pro-tier canary surfaced when token came from file"
 else
   fail "Pro-tier canary missing when token came from file"
@@ -321,7 +321,7 @@ if [ "$UNSAFE_HEADER_LEAK" = "0" ]; then
 else
   fail "unsafe-mode file was loaded anyway (count=$UNSAFE_HEADER_LEAK)"
 fi
-if echo "$UNSAFE_STDERR" | grep -q "unsafe permissions"; then
+if echo "$UNSAFE_STDERR" | grep "unsafe permissions" >/dev/null; then
   pass "unsafe-mode file produced clear stderr warning"
 else
   fail "unsafe-mode file silently ignored — no warning"
@@ -468,7 +468,7 @@ if [ "$EXPIRED_EXIT" != "0" ]; then
 else
   fail "expired-token path exited 0 — should fail"
 fi
-if echo "$EXPIRED_OUTPUT" | grep -q "verify failed with HTTP 401"; then
+if echo "$EXPIRED_OUTPUT" | grep "verify failed with HTTP 401" >/dev/null; then
   pass "expired-token path surfaced clear HTTP-401 error message"
 else
   fail "expired-token path missing HTTP-401 message"

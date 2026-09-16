@@ -68,7 +68,7 @@ cursor_gate() {
       "$AXONFLOW_ENDPOINT/api/v1/mcp-server")
     local mcp_tool
     for mcp_tool in "${mcp_tools[@]}"; do
-      if printf '%s' "$list_resp" | grep -q "\"name\":\"$mcp_tool\""; then
+      if printf '%s' "$list_resp" | grep "\"name\":\"$mcp_tool\"" >/dev/null; then
         echo "PASS: MCP server advertises $mcp_tool"
       else
         echo "FAIL: MCP server did not advertise $mcp_tool - wiring is wrong"

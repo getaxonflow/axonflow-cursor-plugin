@@ -187,7 +187,7 @@ LIST_SUCCESS=$(echo "$LIST_BODY" | jq -r '.success // empty' 2>/dev/null)
 if [ "$LIST_SUCCESS" != "true" ]; then
   fail "axonflow_list_pro_features: missing 'success: true' (axonflow-enterprise#1989)"
 fi
-if ! echo "$LIST_BODY" | grep -qF 'differentiators'; then
+if ! echo "$LIST_BODY" | grep -F 'differentiators' >/dev/null; then
   fail "axonflow_list_pro_features: missing 'differentiators'"
 fi
 DIFF_COUNT=$(echo "$LIST_BODY" | jq -r '.differentiators | length // 0' 2>/dev/null)
@@ -220,10 +220,10 @@ COST_BODY=$(jq -r '.result.content[0].text // empty' "$EVIDENCE/axonflow_get_cos
 if [ "$COST_IS_ERR" != "true" ]; then
   fail "axonflow_get_cost_estimate (forced call): result.isError = '$COST_IS_ERR' (want true)"
 fi
-if ! echo "$COST_BODY" | grep -qF 'feature_pro_only'; then
+if ! echo "$COST_BODY" | grep -F 'feature_pro_only' >/dev/null; then
   fail "axonflow_get_cost_estimate (forced call): body missing 'feature_pro_only' limit_type"
 fi
-if ! echo "$COST_BODY" | grep -qF 'buy.stripe.com/bJe28qbztcdVchjdkw8k800'; then
+if ! echo "$COST_BODY" | grep -F 'buy.stripe.com/bJe28qbztcdVchjdkw8k800' >/dev/null; then
   fail "axonflow_get_cost_estimate (forced call): body missing locked V1 buy URL"
 fi
 [ "$COST_IS_ERR" = "true" ] && echo "  axonflow_get_cost_estimate (forced call): isError + feature_pro_only envelope ✓"
@@ -290,7 +290,7 @@ fi
 if [ "$GT_TENANT" != "$TENANT" ]; then
   fail "axonflow_get_tenant_id: tenant_id='$GT_TENANT' (want '$TENANT')"
 fi
-if ! echo "$GT_UPGRADE" | grep -qF 'getaxonflow.com/pricing'; then
+if ! echo "$GT_UPGRADE" | grep -F 'getaxonflow.com/pricing' >/dev/null; then
   fail "axonflow_get_tenant_id: upgrade_url='$GT_UPGRADE' missing pricing path"
 fi
 [ "$GT_TENANT" = "$TENANT" ] && echo "  axonflow_get_tenant_id: $GT_TENANT + $GT_UPGRADE ✓"

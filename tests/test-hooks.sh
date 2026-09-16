@@ -39,7 +39,7 @@ assert_eq() {
 
 assert_contains() {
     local desc="$1" haystack="$2" needle="$3"
-    if echo "$haystack" | grep -q "$needle"; then
+    if echo "$haystack" | grep "$needle" >/dev/null; then
         echo "  PASS: $desc"
         ((PASS++)) || true
     else
@@ -770,7 +770,7 @@ export AXONFLOW_CHECKPOINT_URL="http://127.0.0.1:$MOCK_PORT/v1/ping"
 "$TELEMETRY_SCRIPT" 2>/dev/null
 sleep 1
 STAMP_CONTENT=$(cat "$TEST_HOME/.cache/axonflow/cursor-plugin-telemetry-sent" 2>/dev/null || echo "")
-if echo "$STAMP_CONTENT" | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+if echo "$STAMP_CONTENT" | grep -E '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' >/dev/null; then
     echo "  PASS: Stamp file contains UUID"
     ((PASS++)) || true
 else
