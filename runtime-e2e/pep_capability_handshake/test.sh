@@ -79,6 +79,11 @@ plant() {
   local label="$1" prog="$2" copy="${MUT_DIR}/mutant.sh"
   cp "$SCRIPT_PATH" "$copy"
   sed -i.bak "$prog" "$copy" 2>/dev/null || sed -i '' "$prog" "$copy"
+  # A plant whose pattern no longer matches the script is no mutant at all.
+  if cmp -s "$SCRIPT_PATH" "$copy"; then
+    fail "PLANT DID NOT APPLY (${label}) - its sed program matches nothing in $(basename "$SCRIPT_PATH"); re-anchor it"
+    return
+  fi
   if matrix "$copy"; then
     fail "MUTANT SURVIVED (${label}) - the matrix cannot detect this defect, so a green run proves nothing about it"
   else
@@ -87,7 +92,8 @@ plant() {
 }
 
 # The grammar check deleted entirely: every malformed audience would be built.
-plant "the audience grammar check removed" 's/grep -qE/grep -qE --invert-match-DISABLED/'
+# (`-e . -e <grammar>` matches any line, so the check passes every audience.)
+plant "the audience grammar check removed" 's/LC_ALL=C grep -E /LC_ALL=C grep -E -e . -e /'
 # The newline guard removed: grep is line-based, so a multi-line audience would
 # pass on its first line and put a raw newline inside a JSON string.
 plant "the multi-line guard removed" 's/\[ "\$_pep_flat" = "\$AXONFLOW_PEP_AUDIENCE" \]/[ 1 = 1 ]/'
@@ -110,7 +116,7 @@ else
 
   CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
     "${ENDPOINT}/api/v1/mcp/check-input" -H 'Content-Type: application/json' \
-    "${AUTH[@]}" -H "X-Axonflow-PEP-Handshake: ${HS}" -d "$BODY")
+    ${AUTH[@]+"${AUTH[@]}"} -H "X-Axonflow-PEP-Handshake: ${HS}" -d "$BODY")
   if [ "$CODE" != "400" ]; then
     pass "a real agent ACCEPTED the declaration this plugin builds (HTTP ${CODE})"
   else
@@ -121,12 +127,80 @@ else
   # explained by an agent that ignores the header.
   BAD=$(curl -s --max-time 20 -X POST \
     "${ENDPOINT}/api/v1/mcp/check-input" -H 'Content-Type: application/json' \
-    "${AUTH[@]}" -H "X-Axonflow-PEP-Handshake: !!!not-base64!!!" -d "$BODY")
+    ${AUTH[@]+"${AUTH[@]}"} -H "X-Axonflow-PEP-Handshake: !!!not-base64!!!" -d "$BODY")
   if grep -q "X-Axonflow-PEP-Handshake" <<<"$BAD"; then
     pass "the same agent REFUSES a malformed declaration and names the header"
   else
     fail "the agent did not refuse a malformed declaration; it may not be reading the header at all, which would make the assertion above vacuous"
   fi
+fi
+
+echo
+echo "=== stage 3: Cursor's MCP entry, before and after the handshake writer ==="
+# Cursor's MCP connection sends mcp.json's STATIC headers with plain ${VAR}
+# expansion, an unset variable becoming an EMPTY value (README "Cursor-specific:
+# the MCP connection is env-var-only"). This stage expands the plugin's own
+# mcp.json that way and sends the MCP server a check_output whose message
+# carries PII (a mandatory field_redact obligation). What Cursor itself sends
+# is not observed here (no headless Cursor); runtime-e2e/mcp-session-headers is
+# the evidence-gated IDE check.
+if [ -z "$ENDPOINT" ] || ! curl -sf --max-time 5 "${ENDPOINT}/health" >/dev/null 2>&1; then
+  echo "  SKIP: no reachable agent (set AXONFLOW_ENDPOINT to run this stage)"
+elif ! command -v jq >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+  echo "  SKIP: jq and python3 are required for this stage"
+else
+  S3=$(mktemp -d)
+  # expand_headers <mcp.json>: one "Name: value" per line, ${VAR} expanded from
+  # the environment, unset -> "".
+  expand_headers() {
+    python3 - "$1" <<'PY'
+import json, os, re, sys
+h = json.load(open(sys.argv[1]))["mcpServers"]["axonflow"]["headers"]
+for k, v in h.items():
+    print(k + ": " + re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", lambda m: os.environ.get(m.group(1), ""), v))
+PY
+  }
+  # mcp_check_output <mcp.json>: the check_output answer's result text.
+  mcp_check_output() {
+    local args=()
+    while IFS= read -r line; do args+=(-H "$line"); done < <(expand_headers "$1")
+    jq -nc '{jsonrpc:"2.0",id:"s3",method:"tools/call",params:{name:"check_output",arguments:{connector_type:"cursor.Shell",message:"customer SSN 123-45-6789 and email jane.doe@example.com"}}}' |
+      curl -s --max-time 20 -X POST "${ENDPOINT}/api/v1/mcp-server" -H 'Content-Type: application/json' "${args[@]}" --data-binary @- \
+      | jq -r '.result.content[0].text // empty' 2>/dev/null
+  }
+  cp "$PLUGIN_DIR/mcp.json" "$S3/shipped.json"
+  if expand_headers "$S3/shipped.json" | grep '^X-Axonflow-PEP-Handshake:' >/dev/null; then
+    fail "the shipped MCP entry sends a handshake header with no audience configured"
+  else
+    pass "the shipped MCP entry sends no handshake header"
+  fi
+  ANS=$(unset AXONFLOW_PEP_AUDIENCE; mcp_check_output "$S3/shipped.json")
+  if [ "$(jq -r '.allowed' <<<"$ANS" 2>/dev/null)" = "true" ] && [ -n "$(jq -r '.redacted_message // empty' <<<"$ANS" 2>/dev/null)" ]; then
+    pass "no audience: the connection works and the PII answer is allowed with a redacted_message (the pre-handshake behaviour)"
+  else
+    fail "no audience: unexpected answer: $(cut -c1-300 <<<"$ANS")"
+  fi
+
+  cp "$PLUGIN_DIR/mcp.json" "$S3/configured.json"
+  env -u AXONFLOW_PEP_HANDSHAKE AXONFLOW_PEP_AUDIENCE="$AUDIENCE" bash "$PLUGIN_DIR/scripts/configure-mcp-handshake.sh" "$S3/configured.json" >/dev/null 2>&1
+  ANS=$(mcp_check_output "$S3/configured.json")
+  if [ "$(jq -r '.allowed' <<<"$ANS" 2>/dev/null)" = "false" ] && [ "$(jq -r '.block_reason' <<<"$ANS" 2>/dev/null)" = "unsupported_obligation" ]; then
+    pass "audience configured: the same answer is refused (block_reason unsupported_obligation)"
+  else
+    fail "audience configured: expected allowed:false, unsupported_obligation; got: $(cut -c1-300 <<<"$ANS")"
+  fi
+
+  # Why the template can never carry a static "${AXONFLOW_PEP_HANDSHAKE}" line:
+  # unset, it expands to a present-and-empty header, which the platform refuses.
+  EMPTY=$(jq -nc '{jsonrpc:"2.0",id:"s3e",method:"tools/call",params:{name:"check_output",arguments:{connector_type:"cursor.Shell",message:"hello"}}}' |
+    curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST "${ENDPOINT}/api/v1/mcp-server" -H 'Content-Type: application/json' \
+      ${AUTH[@]+"${AUTH[@]}"} -H 'X-Axonflow-PEP-Handshake;' --data-binary @-)
+  if [ "$EMPTY" = "400" ]; then
+    pass "a present-and-empty handshake header is refused (HTTP 400), which is why the template has no static handshake line"
+  else
+    fail "a present-and-empty handshake header answered HTTP $EMPTY (expected 400)"
+  fi
+  rm -rf "$S3"
 fi
 
 echo
