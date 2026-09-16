@@ -24,6 +24,12 @@
 # operator-driven companion `MANUAL_RUNBOOK.md` covers the IDE chat
 # panel (driving Cursor itself); this script gives CI a deterministic
 # automated check on the same wire shape.
+#
+# NEVER A DEFAULT TARGET: PRODUCTION. With AGENT_URL unset the suite SKIPs.
+# Against https://try.getaxonflow.com it registers a tenant, creates a tenant
+# policy on it and deletes that tenant's HITL and policy rows through AWS, so
+# it SKIPs there unless AXONFLOW_E2E_ALLOW_PRODUCTION=1 is set for the run
+# (runtime-e2e/_lib/cursor-gate.sh, runtime_e2e_refuse_production).
 
 set -uo pipefail
 
@@ -34,7 +40,14 @@ UTC_TS=$(date -u +%Y%m%dT%H%M%SZ)
 EVIDENCE="$SCRIPT_DIR/EVIDENCE/$UTC_TS"
 mkdir -p "$EVIDENCE"
 
-AGENT_URL="${AGENT_URL:-https://try.getaxonflow.com}"
+# shellcheck source=../_lib/cursor-gate.sh
+source "$PLUGIN_DIR/runtime-e2e/_lib/cursor-gate.sh"
+AGENT_URL="${AGENT_URL:-}"
+if [ -z "$AGENT_URL" ]; then
+  echo "SKIP: AGENT_URL is not set (this suite has no default target; see the header)"
+  exit 0
+fi
+runtime_e2e_refuse_production "$AGENT_URL" "registers a tenant, creates a tenant policy on it and deletes that tenant's rows through AWS"
 
 for tool in jq curl; do
   if ! command -v "$tool" >/dev/null 2>&1; then

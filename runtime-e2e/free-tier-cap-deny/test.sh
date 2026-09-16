@@ -17,6 +17,11 @@ PRE_HOOK="$PLUGIN_DIR/scripts/pre-tool-check.sh"
 POST_HOOK="$PLUGIN_DIR/scripts/post-tool-audit.sh"
 
 ENDPOINT="${AXONFLOW_ENDPOINT:-http://localhost:8080}"
+# Production Community SaaS is never a target by default: this suite registers
+# a Free tenant at ENDPOINT and drives it past its per-minute limit.
+# shellcheck source=../_lib/cursor-gate.sh
+source "$PLUGIN_DIR/runtime-e2e/_lib/cursor-gate.sh"
+runtime_e2e_refuse_production "$ENDPOINT" "registers a Free tenant there and drives it past its per-minute limit"
 MAX_CALLS="${AXONFLOW_E2E_CAP_MAX_CALLS:-60}"
 EVIDENCE="${AXONFLOW_E2E_EVIDENCE_DIR:-$(mktemp -d -t free-tier-cap-deny.XXXXXX)}"
 
@@ -92,7 +97,7 @@ fire() {
 }
 
 pre_json() { jq -nc --arg c "$1" '{tool_name: "Shell", tool_input: {command: $c}}'; }
-post_json() { jq -nc --arg o "$1" '{tool_name: "Shell", tool_input: {command: "cat notes.txt"}, tool_response: {stdout: $o, exitCode: 0}}'; }
+post_json() { jq -nc --arg o "$1" '{tool_name: "Shell", tool_input: {command: "cat notes.txt"}, tool_output: ({exitCode: 0, stdout: $o} | tojson)}'; }
 # Cursor blocks on exit code 2, with the reason on stderr.
 is_block() { [ "$(cat "$EVIDENCE/$1.rc")" = 2 ]; }
 block_reason() { cat "$EVIDENCE/$1.stderr"; }

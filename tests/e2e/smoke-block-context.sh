@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # Plugin smoke E2E: install-and-use sanity check against a live AxonFlow
-# stack. Feeds a SQLi-bearing Bash tool invocation into pre-tool-check.sh
-# and asserts the hook exits 2 with stderr containing the Cursor deny
-# prefix and Plugin Batch 1 richer-context markers.
+# stack. Feeds a destructive Shell tool invocation (the preToolUse shape
+# Cursor documents: tool_name "Shell", tool_input.command) into
+# pre-tool-check.sh and asserts the hook exits 2 with the policy violation
+# and the decision id on stderr, and Cursor's documented deny JSON on stdout.
 #
-# Scope: smoke-only — install wiring + one local deny UX. The full
-# install-and-use matrix (explain, override lifecycle, audit filter
-# parity, cache invalidation) lives alongside the platform in
-# axonflow-enterprise/tests/e2e/plugin-batch-1/cursor-install/.
+# The seed is `rm -rf / --no-preserve-root`, which AxonFlow v11.0.0 blocks
+# (sys__dangerous__destructive__fs). The SQL injection string this smoke used
+# to seed is ALLOWED by v11.0.0 everywhere but /api/request, and v11.0.0 sends
+# no risk level, so the old `risk:` marker could never appear.
+#
+# Scope: smoke-only — install wiring + one local deny UX.
 #
 # Usage:
 #   AXONFLOW_ENDPOINT=http://localhost:8080 \
@@ -38,13 +41,19 @@ if ! curl -sSf -o /dev/null --max-time 5 "$AXONFLOW_ENDPOINT/health"; then
   exit 0
 fi
 
-INPUT='{"tool_name":"Bash","tool_input":{"command":"psql -c \"SELECT * FROM users WHERE id='"'"'1'"'"' OR 1=1--\""}}'
+INPUT='{"hook_event_name":"preToolUse","tool_name":"Shell","tool_input":{"command":"rm -rf / --no-preserve-root","working_directory":"/home/user/project"},"tool_use_id":"smoke-1","cwd":"/home/user/project"}'
 
-STDERR_OUT=$(echo "$INPUT" | bash "$HOOK_SCRIPT" 2>&1 >/dev/null)
+OUT_FILE=$(mktemp)
+ERR_FILE=$(mktemp)
+trap 'rm -f "$OUT_FILE" "$ERR_FILE"' EXIT
+printf '%s' "$INPUT" | bash "$HOOK_SCRIPT" >"$OUT_FILE" 2>"$ERR_FILE"
 EXIT_CODE=$?
+STDERR_OUT=$(cat "$ERR_FILE")
 echo "--- exit code: $EXIT_CODE ---"
 echo "--- stderr ---"
 echo "$STDERR_OUT"
+echo "--- stdout ---"
+cat "$OUT_FILE"
 echo "---"
 
 errors=0
@@ -52,16 +61,16 @@ if [ "$EXIT_CODE" != "2" ]; then
   echo "FAIL: expected exit 2 (Cursor deny semantics), got $EXIT_CODE"
   errors=$((errors + 1))
 fi
-if ! echo "$STDERR_OUT" | grep -E "AxonFlow policy violation" >/dev/null; then
+if ! grep -q "AxonFlow policy violation" <<<"$STDERR_OUT"; then
   echo "FAIL: stderr missing 'AxonFlow policy violation' prefix"
   errors=$((errors + 1))
 fi
-if ! echo "$STDERR_OUT" | grep -E "decision:" >/dev/null; then
-  echo "FAIL: stderr missing 'decision:' marker (Plugin Batch 1 richer context)"
+if ! grep -qE "decision: [0-9a-f-]{36}" <<<"$STDERR_OUT"; then
+  echo "FAIL: stderr missing 'decision: <id>' marker (Plugin Batch 1 richer context)"
   errors=$((errors + 1))
 fi
-if ! echo "$STDERR_OUT" | grep -E "risk:" >/dev/null; then
-  echo "FAIL: stderr missing 'risk:' marker (Plugin Batch 1 richer context)"
+if [ "$(jq -r '.permission // empty' "$OUT_FILE" 2>/dev/null)" != "deny" ]; then
+  echo "FAIL: stdout is not Cursor's deny JSON ({\"permission\":\"deny\", ...})"
   errors=$((errors + 1))
 fi
 
@@ -69,4 +78,4 @@ if [ $errors -gt 0 ]; then
   echo "FAIL: smoke scenario failed with $errors error(s)"
   exit 1
 fi
-echo "PASS: smoke — Cursor hook denies SQLi Bash with exit 2 + richer context"
+echo "PASS: smoke — Cursor hook denies a destructive Shell command with exit 2, the decision id and the deny JSON"
