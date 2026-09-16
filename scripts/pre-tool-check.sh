@@ -2,29 +2,123 @@
 # PreToolUse hook — evaluate tool inputs against AxonFlow governance policies.
 # Adapted for Cursor IDE from the Claude Code plugin.
 #
-# Reads tool_name and tool_input from stdin (JSON).
+# Reads tool_name and tool_input from stdin (JSON), or a beforeShellExecution
+# payload ({command, cwd}).
 # Calls AxonFlow check_policy via the MCP server endpoint.
 #
-# Cursor hook exit codes:
+# Cursor hook exit codes (https://cursor.com/docs/hooks, read 2026-09-16):
 #   Exit 0 = allow (no opinion)
-#   Exit 2 = block (tool execution prevented)
+#   Exit 2 = block (tool execution prevented; equivalent to permission "deny")
 #   Other non-zero = non-blocking error (tool proceeds)
 #
-# Fail-open: network failures → exit 0 (allow)
-# Fail-closed: auth/config errors → exit 2 (block)
+# Every block but one goes through axonflow_pre_deny: exit 2, the reason on stderr, and
+# the documented deny JSON on stdout ({"permission":"deny","user_message",
+# "agent_message"}). Exit 2 is the block on its own; the JSON carries the
+# user_message wherever Cursor reads stdout on exit 2 (unverified without an
+# IDE capture). The exception is the shell-write redaction (PII_ACTION=redact):
+# it prints the deny JSON on exit 0, because its agent_message must carry the
+# redacted content for the retry.
+#
+# Failure posture, one row per answer (the status classes are read by
+# scripts/lib/failure-posture.sh, which post-tool-audit.sh reads too):
+#   A policy decision: a JSON-RPC result on   -> enforced as the platform decided;
+#   any status but 401 and 429                   a deny is exit 2
+#   HTTP 401, or the auth-failure cooldown    -> BLOCK: a rejected credential; the
+#                                                cooldown blocks locally, naming the
+#                                                seconds left and the stamp file
+#   HTTP 429, or a request-rate limit stamp   -> BLOCK: a request limit
+#   A JSON-RPC error other than -32603 /      -> BLOCK: the agent refused the
+#   -32700 (or with no numeric code); a 3xx;     request (endpoint, credential or
+#   a 4xx other than 408 without a JSON-RPC      configuration); a 413 names the size
+#   answer
+#   A policy result that decides nothing (no -> BLOCK: an answer that decides
+#   boolean "allowed", or flagged isError)       nothing never lets a tool call run
+#   The request for this tool call could not  -> BLOCK: what governance would
+#   be built                                     check was never sent
+#   No usable answer: unreachable, timeout,   -> AXONFLOW_FAIL_MODE decides: BLOCK
+#   408, 5xx, JSON-RPC -32603 / -32700, an       unless it is "open" (any case). THE
+#   empty or unreadable body, jq or curl         CURSOR DEFAULT IS CLOSED: Cursor shows
+#   missing                                      the user a message only on a deny, so a
+#                                                call run ungoverned would be silent to
+#                                                them. Under "open" the call runs and the
+#                                                notice reaches stderr only.
+#   scripts/lib/failure-posture.sh missing    -> BLOCK, naming the file
 
-# Fail-open: if dependencies missing, allow the tool call
-if ! command -v jq &>/dev/null; then
+# The script's directory from builtins only: this runs before the dependency
+# check below, on a PATH that may hold nothing but bash.
+SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
+if [ "$SCRIPT_DIR" = "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR="."
+fi
+SCRIPT_DIR="$(cd "$SCRIPT_DIR" && pwd)"
+
+# _axonflow_json_string <text>
+#   The text as a JSON string. jq when it is installed; without it, by hand:
+#   backslashes and double quotes escaped and control characters dropped, so
+#   the document stays valid (the text is this script's own wording).
+_axonflow_json_string() {
+  if command -v jq &>/dev/null; then
+    printf '%s' "$1" | jq -Rs .
+  else
+    # Builtins only: this runs when jq is missing, on a PATH that may hold
+    # nothing else. Backslashes and double quotes are escaped and control
+    # characters dropped, so the document stays valid.
+    local s="$1" out="" c i
+    for ((i = 0; i < ${#s}; i++)); do
+      c="${s:i:1}"
+      case "$c" in
+        \\) out="${out}\\\\" ;;
+        '"') out="${out}\\\"" ;;
+        [[:cntrl:]]) ;;
+        *) out="${out}${c}" ;;
+      esac
+    done
+    printf '"%s"' "$out"
+  fi
+}
+
+# Block the tool call and stop: the one chokepoint. Exit 2 is Cursor's block;
+# the reason goes to stderr and, as Cursor's documented deny JSON, to stdout.
+axonflow_pre_deny() {
+  local msg
+  msg=$(_axonflow_json_string "$1")
+  echo "$1" >&2
+  printf '{"permission":"deny","user_message":%s,"agent_message":%s}\n' "$msg" "$msg"
+  exit 2
+}
+
+# The failure-posture table this hook reads. Without it the hook cannot tell a
+# decision from a refusal, so it blocks and says the install is incomplete.
+# shellcheck source=./lib/failure-posture.sh
+if ! . "${SCRIPT_DIR}/lib/failure-posture.sh" 2>/dev/null; then
+  axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow plugin install is incomplete (scripts/lib/failure-posture.sh is missing or unreadable), so this tool call is blocked. Reinstall the plugin."
+fi
+
+# A governed check that got no usable answer. AXONFLOW_FAIL_MODE decides, and
+# on Cursor the default blocks: only "open" (any case) lets the tool call run
+# UNGOVERNED, and then the notice goes to stderr, which Cursor's contract does
+# not show the user. It never applies to an answer that refused the call (a
+# 401, a 429, a policy deny): those block. No permission "allow" is ever
+# printed: this hook does not claim a decision it did not make.
+axonflow_pre_ungoverned() {
+  if ! axonflow_fail_mode_open; then
+    axonflow_pre_deny "AxonFlow governance blocked: $1, so this tool call is blocked. Set AXONFLOW_FAIL_MODE=open to let tool calls run UNGOVERNED when AxonFlow cannot answer (Cursor shows no notice for a call that runs)."
+  fi
+  echo "[AxonFlow] GOVERNANCE UNAVAILABLE: $1. This tool call runs UNGOVERNED because AXONFLOW_FAIL_MODE is open." >&2
   exit 0
+}
+
+# The hook cannot read the tool call or reach AxonFlow without these.
+if ! command -v jq &>/dev/null; then
+  axonflow_pre_ungoverned "the AxonFlow hook needs jq, which is not installed"
 fi
 if ! command -v curl &>/dev/null; then
-  exit 0
+  axonflow_pre_ungoverned "the AxonFlow hook needs curl, which is not installed"
 fi
 
 # Endpoint resolution per ADR-048: default to AxonFlow Community SaaS only when
 # the user has not set explicit config. Any user-supplied AXONFLOW_ENDPOINT or
 # AXONFLOW_AUTH is honoured untouched — no silent override.
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -z "${AXONFLOW_ENDPOINT:-}" ] && [ -z "${AXONFLOW_AUTH:-}" ]; then
   ENDPOINT="https://try.getaxonflow.com"
   AXONFLOW_MODE="community-saas"
@@ -38,7 +132,11 @@ else
   AXONFLOW_MODE="self-hosted"
 fi
 AUTH="${AXONFLOW_AUTH:-}"
-REQUEST_TIMEOUT_SECONDS="${AXONFLOW_TIMEOUT_SECONDS:-8}"
+# The configured per-request timeout (a positive integer; anything else is the
+# default). Each request gets no more than the hook's time budget leaves.
+CONFIGURED_TIMEOUT_SECONDS="${AXONFLOW_TIMEOUT_SECONDS:-8}"
+case "$CONFIGURED_TIMEOUT_SECONDS" in ''|*[!0-9]*|0) CONFIGURED_TIMEOUT_SECONDS=8 ;; esac
+REQUEST_TIMEOUT_SECONDS="$CONFIGURED_TIMEOUT_SECONDS"
 export AXONFLOW_MODE
 
 # Plugin-claimed Pro license token (W4 paid tier, ADR-049). The token is an
@@ -84,6 +182,13 @@ echo "[AxonFlow] Connected to AxonFlow at ${ENDPOINT} (mode=${AXONFLOW_MODE})${T
 # Community-SaaS bootstrap: register with try.getaxonflow.com on first run and
 # load the resulting Basic-auth credential into AXONFLOW_AUTH. No-op when the
 # user has set explicit config (AXONFLOW_MODE != community-saas).
+# The registration gets at most 5 seconds, and only what the budget leaves
+# after holding 4 back for the policy check itself.
+_AXONFLOW_REGISTER_MAX_TIME=$(axonflow_budget_timeout 5 4)
+# Only this run's bootstrap may define its cleanup: nothing of that name from
+# the environment (an exported shell function) is ever called.
+unset _AXONFLOW_BOOTSTRAP_TRAP
+unset -f _axonflow_bootstrap_cleanup_on_exit 2>/dev/null
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/community-saas-bootstrap.sh"
 AUTH="${AXONFLOW_AUTH:-}"
@@ -98,17 +203,11 @@ AUTH="${AXONFLOW_AUTH:-}"
 . "${SCRIPT_DIR}/client-header.sh"
 
 # V1 Plugin Pro upgrade-prompt envelope handling (umbrella
-# axonflow-enterprise#1958). Provides axonflow_throttle_active +
-# axonflow_handle_envelope_response. See scripts/upgrade-prompt.sh.
+# axonflow-enterprise#1958) and the shared throttle-until stamp. Provides
+# axonflow_governed_stamp + axonflow_handle_envelope_response. See
+# scripts/upgrade-prompt.sh.
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/upgrade-prompt.sh"
-
-# Block the tool call with the reason on stderr and stop (exit 2 is the
-# hook's block).
-axonflow_pre_deny() {
-  echo "$1" >&2
-  exit 2
-}
 
 AUTH_HEADER=()
 if [ -n "$AUTH" ]; then
@@ -149,6 +248,17 @@ if [ -n "${AXONFLOW_USER_TOKEN:-}" ]; then
   AUTH_HEADER+=(-H "X-User-Token: ${AXONFLOW_USER_TOKEN}")
 fi
 
+# #2943: when a per-user token was sent, name it as a likely cause of a
+# rejected credential — the platform fails closed on a presented-but-invalid
+# X-User-Token (expired, revoked, wrong org), and the generic "fix
+# AxonFlow configuration" guidance would send the operator down the wrong
+# path. The token VALUE is never printed.
+USER_TOKEN_HINT=""
+if [ -n "${AXONFLOW_USER_TOKEN:-}" ]; then
+  USER_TOKEN_HINT=" A per-user token is configured (AXONFLOW_USER_TOKEN / user-token.json) and was sent as X-User-Token — if it is expired, revoked, or minted for a different org, the platform rejects the request; ask your admin to rotate it, or remove it to fall back to shared-credential attribution."
+fi
+AUTH_HINT="Fix AXONFLOW_AUTH (or refresh your credentials) to restore tool access.${USER_TOKEN_HINT}"
+
 # One-time positive disclosure when first connecting to Community SaaS. Stamp
 # is separate from telemetry so the disclosure fires exactly once per install,
 # independent of the 7-day heartbeat cadence.
@@ -167,15 +277,23 @@ fi
 
 # Telemetry heartbeat (7-day cadence; stamp-on-delivery; in-flight gate).
 # Backgrounded so it never blocks the hook protocol.
-"${SCRIPT_DIR}/telemetry-ping.sh" </dev/null &
+"${SCRIPT_DIR}/telemetry-ping.sh" </dev/null >/dev/null &
 # Plugin/platform version compatibility check — fire-and-forget, runs once
 # per install, warns to stderr if the plugin is below the platform's
 # min_plugin_version (axonflow-enterprise#1764). Same fire-and-forget shape
 # as telemetry-ping; never blocks the hook hot path.
-"${SCRIPT_DIR}/version-check.sh" </dev/null &
+"${SCRIPT_DIR}/version-check.sh" </dev/null >/dev/null &
 
 # Read hook input from stdin
 INPUT=$(cat)
+
+# Input that is not a JSON object cannot be governed: the hook cannot tell
+# which call it is being asked about. Cursor fails closed on a hook whose OUTPUT is malformed;
+# the same closed default applies to input this hook cannot read. (Empty input
+# names no call and is left alone.)
+if [ -n "$INPUT" ] && ! printf '%s' "$INPUT" | jq -e 'type == "object"' >/dev/null 2>&1; then
+  axonflow_pre_deny "AxonFlow governance blocked: the hook input for this tool call is not JSON (or not a JSON object), so the call cannot be checked and is blocked."
+fi
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 TOOL_INPUT=$(echo "$INPUT" | jq -c '.tool_input // {}')
@@ -194,25 +312,32 @@ fi
 # Derive connector type: cursor.{ToolName}
 CONNECTOR_TYPE="cursor.${TOOL_NAME}"
 
-# Extract the statement to evaluate based on tool type
+# Extract the statement to evaluate based on tool type. Write and Edit content
+# is checked in full: the request is built from stdin, so its size is no
+# longer bounded by a command-line argument (it used to be cut at 2000
+# characters, and content past that was never checked).
 case "$TOOL_NAME" in
   Bash|Shell)
     STATEMENT=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
     ;;
   Write)
     FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty')
-    CONTENT=$(echo "$TOOL_INPUT" | jq -r '.content // empty' | cut -c1-2000)
+    CONTENT=$(echo "$TOOL_INPUT" | jq -r '.content // empty')
     STATEMENT="${FILE_PATH}"$'\n'"${CONTENT}"
     ;;
   Edit)
     FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty')
-    NEW_STRING=$(echo "$TOOL_INPUT" | jq -r '.new_string // empty' | cut -c1-2000)
+    NEW_STRING=$(echo "$TOOL_INPUT" | jq -r '.new_string // empty')
     STATEMENT="${FILE_PATH}"$'\n'"${NEW_STRING}"
     ;;
   NotebookEdit)
-    STATEMENT=$(echo "$TOOL_INPUT" | jq -r '.cell_content // .content // empty')
+    # Claude Code's NotebookEdit sends the code as new_source (captured in the
+    # Claude Code plugin's fixtures); the older names are kept for other shapes.
+    STATEMENT=$(echo "$TOOL_INPUT" | jq -r '.new_source // .cell_content // .content // empty')
     ;;
-  mcp__*)
+  mcp__*|MCP:*)
+    # MCP tools: mcp__<server>__<tool>, or MCP:<tool_name> as Cursor's hook
+    # documentation names them.
     STATEMENT=$(echo "$TOOL_INPUT" | jq -r '.query // .statement // .command // .url // empty')
     if [ -z "$STATEMENT" ] || [ "$STATEMENT" = "null" ]; then
       STATEMENT=$(echo "$TOOL_INPUT" | jq -c '.')
@@ -223,45 +348,65 @@ case "$TOOL_NAME" in
     ;;
 esac
 
-# Skip if no statement to evaluate
-if [ -z "$STATEMENT" ] || [ "$STATEMENT" = "null" ] || [ "$STATEMENT" = "{}" ]; then
-  exit 0
+# An input with nothing to check (an MCP call with no arguments, an empty
+# command, a NotebookEdit delete, which sends no new_source) is still a governed
+# call: it is checked as the tool's name plus the input's plain fields (the
+# notebook path, cell id, edit mode), never skipped. A shell command that is
+# literally "null" or "{}" is that command, and is checked as it is.
+NOTHING_TO_CHECK=""
+case "$TOOL_NAME" in
+  Bash|Shell)
+    [ -z "$STATEMENT" ] && NOTHING_TO_CHECK=1
+    ;;
+  *)
+    if [ -z "$STATEMENT" ] || [ "$STATEMENT" = "null" ] || [ "$STATEMENT" = "{}" ]; then
+      NOTHING_TO_CHECK=1
+    fi
+    ;;
+esac
+if [ -n "$NOTHING_TO_CHECK" ]; then
+  STATEMENT=$(printf '%s' "$TOOL_INPUT" | jq -c --arg t "$TOOL_NAME" \
+    '{tool: $t} + (if type == "object" then with_entries(select(.value | type == "string" or type == "number" or type == "boolean")) else {} end)' 2>/dev/null)
+  if [ -z "$STATEMENT" ]; then
+    STATEMENT="{\"tool\":$(_axonflow_json_string "$TOOL_NAME")}"
+  fi
 fi
 
-# V1 Plugin Pro back-off: when a recent governed call returned a 429/403
-# envelope, the throttle-until stamp suppresses outbound traffic until the
-# envelope's resets_at deadline. While a hosted Free-tier limit holds, the
-# tool call is BLOCKED with the limit named (the upgrade prompt was surfaced
-# when the throttle landed): over the cap is deny, not governance off (ruled
-# 2026-09-14; reversible here). The 401 pause (auth_failure) falls open.
-if axonflow_throttle_active; then
-  if [ "$(axonflow_throttle_reason)" != "auth_failure" ]; then
+# Back-off: a recent governed call stamped the shared throttle-until file, and
+# the hook answers locally instead of re-sending a request the platform
+# refused. Two stamps gate (scripts/upgrade-prompt.sh, the stamp rules):
+#   - the 401 cooldown (auth_failure, axonflow-enterprise#2275): the credential
+#     was rejected, and a rejected credential never lets a tool call run. The
+#     cooldown only spares the platform the retry storm;
+#   - a request-rate limit (daily_quota, per_minute), for at most 300 seconds
+#     after it was written: over the cap is deny, not governance off (ruled
+#     2026-09-14).
+# Any other stamp (a feature or object-count limit, or one past the cap) gates
+# nothing and is left on disk for the plugin that wrote it.
+case "$(axonflow_governed_stamp)" in
+  auth_failure)
+    axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent rejected authentication (HTTP 401) and an auth-failure cooldown is active, so this tool call is blocked. $(axonflow_auth_cooldown_note) ${AUTH_HINT}"
+    ;;
+  limit)
     axonflow_pre_deny "$AXONFLOW_LIMIT_DENY_REASON"
-  fi
-  exit 0
-fi
+    ;;
+esac
 
 # Call AxonFlow check_policy via MCP server.
-#
-# Issue #1545 Direction 3: fail OPEN on any network-level failure (timeout,
-# DNS failure, connection refused, 5xx). Only auth/config errors reported
-# by AxonFlow fail closed (see the JSONRPC_ERROR handling below).
 #
 # V1 Plugin Pro: capture HTTP status + headers + body separately so the
 # envelope handler can detect 429 / 403 and stamp the throttle deadline
 # before we fall through to the JSON-RPC parser.
+PRECHECK_REQUEST=$(mktemp)
 PRECHECK_BODY=$(mktemp)
 PRECHECK_HEADERS=$(mktemp)
-trap 'rm -f "$PRECHECK_BODY" "$PRECHECK_HEADERS"' EXIT
-HTTP_CODE=$(curl -sS --max-time "$REQUEST_TIMEOUT_SECONDS" \
-  -D "$PRECHECK_HEADERS" -o "$PRECHECK_BODY" -w '%{http_code}' \
-  -X POST "${ENDPOINT}/api/v1/mcp-server" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
-  "${AUTH_HEADER[@]}" \
-  -d "$(jq -n \
-    --arg ct "$CONNECTOR_TYPE" \
-    --arg stmt "$STATEMENT" \
+trap 'rm -f "$PRECHECK_REQUEST" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; axonflow_bootstrap_cleanup' EXIT
+
+# The statement reaches jq on stdin and the body reaches curl as a file, never
+# as a command-line argument: an argument has a size limit (about 128 KiB on
+# Linux), and the model chooses the command's length. If the request cannot be
+# built, what governance would check was never sent, and the call is blocked.
+if ! printf '%s' "$STATEMENT" | jq -Rsc --arg ct "$CONNECTOR_TYPE" \
     '{
       jsonrpc: "2.0",
       id: "hook-pre",
@@ -270,18 +415,40 @@ HTTP_CODE=$(curl -sS --max-time "$REQUEST_TIMEOUT_SECONDS" \
         name: "check_policy",
         arguments: {
           connector_type: $ct,
-          statement: $stmt,
+          statement: .,
           operation: "execute"
         }
       }
-    }')" 2>/dev/null)
+    }' > "$PRECHECK_REQUEST" 2>/dev/null || [ ! -s "$PRECHECK_REQUEST" ]; then
+  axonflow_pre_deny "AxonFlow governance blocked: the policy check request for this tool call could not be built, so the call was never checked and is blocked."
+fi
+
+# Community SaaS with no credential after the bootstrap (the registration did
+# not complete: unreachable, refused, rate limited, or out of time): there is
+# nothing to authenticate the check with, so it is no usable answer. No request
+# is sent (it could only be refused as a 401, which would stamp a cooldown and
+# name a variable the user never set), and no stamp is written.
+if [ "${AXONFLOW_MODE:-}" = "community-saas" ] && [ -z "$AUTH" ]; then
+  axonflow_pre_ungoverned "the AxonFlow Community SaaS registration has not completed, so there is no credential to ask the AxonFlow agent at ${ENDPOINT} with"
+fi
+
+REQUEST_TIMEOUT_SECONDS=$(axonflow_budget_timeout "$CONFIGURED_TIMEOUT_SECONDS" 1)
+if [ "$REQUEST_TIMEOUT_SECONDS" -lt 1 ]; then
+  axonflow_pre_ungoverned "the hook's ${_AXONFLOW_HOOK_BUDGET_SECONDS}-second time budget ran out before the AxonFlow agent at ${ENDPOINT} could be asked"
+fi
+HTTP_CODE=$(curl -sS --max-time "$REQUEST_TIMEOUT_SECONDS" \
+  -D "$PRECHECK_HEADERS" -o "$PRECHECK_BODY" -w '%{http_code}' \
+  -X POST "${ENDPOINT}/api/v1/mcp-server" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  "${AUTH_HEADER[@]}" \
+  --data-binary @"$PRECHECK_REQUEST" 2>/dev/null)
 CURL_EXIT=$?
 
-# Any curl-level failure — timeout, DNS failure, connection refused, TCP
-# reset — fails open. The only reason to fail closed is a well-formed
-# auth/config error from AxonFlow itself, handled below.
+# Any curl-level failure (exit != 0) means no answer arrived — timeout, DNS
+# failure, connection refused, TCP reset.
 if [ "$CURL_EXIT" -ne 0 ]; then
-  exit 0
+  axonflow_pre_ungoverned "the AxonFlow agent at ${ENDPOINT} could not be reached (curl exit ${CURL_EXIT})"
 fi
 
 # V1 Plugin Pro: detect the structured envelope on 429 / 403 responses.
@@ -289,37 +456,61 @@ fi
 # the tool call is BLOCKED: over a hosted Free-tier limit is deny with the
 # visible upgrade prompt, not governance off (ruled 2026-09-14; reversible here).
 if axonflow_handle_envelope_response "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; then
-  axonflow_pre_deny "$AXONFLOW_LIMIT_DENY_REASON"
-fi
-
-# HTTP 401 — broken AXONFLOW_AUTH credential. The envelope handler returns 1
-# for 401 (it only fires on 429/403), so without this guard every hook would
-# fall through and re-fire the same 401 (axonflow-enterprise#2275 — 716
-# retries in 24h from one source IP). Stamp a 5-minute throttle so the
-# operator has time to refresh the credential without the storm.
-#
-# Carve-out: when a 401 carries a JSON-RPC body with error.code == -32001,
-# the agent is telling us "your credential maps to no tenant" — an expected
-# fail-closed signal that the JSON-RPC parser below handles with `exit 2`.
-# We must NOT short-circuit that path through the auth-failure throttle
-# (which exits 0 / fail-open). Without this carve-out, PR #74 silently
-# regressed the -32001 fail-closed contract carried since #1545.
-JSONRPC_CODE_PRECHECK=""
-if [ "$HTTP_CODE" = "401" ] && [ -s "$PRECHECK_BODY" ]; then
-  JSONRPC_CODE_PRECHECK=$(jq -r '.error.code // empty' "$PRECHECK_BODY" 2>/dev/null || echo "")
-fi
-if [ "$JSONRPC_CODE_PRECHECK" = "-32001" ]; then
-  # Fall through to the JSON-RPC parser below — it will exit 2 (fail-closed).
-  :
-else
-  if axonflow_handle_auth_failure "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; then
-    exit 0
-  fi
+  axonflow_pre_deny "$(axonflow_limit_deny_reason)"
 fi
 
 RESPONSE=$(cat "$PRECHECK_BODY")
+
+# The platform's own words for a refusal (a JSON-RPC error message, a coded
+# error envelope's message, or a plain {"error": "..."} body), with control
+# characters dropped and capped, quoted as the platform's: any proxy in the way
+# can write this text, and it reaches Cursor and the model. Empty for a body
+# that is not JSON (an HTML error page).
+PLATFORM_TEXT=$(axonflow_platform_text "$RESPONSE")
+SAID="${PLATFORM_TEXT:+; AxonFlow said: \"$PLATFORM_TEXT\"}"
+
+# axonflow-enterprise#2275: a 401 stamps a cooldown (the helper; 300 seconds by
+# default) so a tight retry loop can't fire 716 × 401 in 24h, and the tool call
+# is BLOCKED: a rejected credential never lets a tool call run, with or without
+# a per-user token. The cooldown then blocks locally, with no network
+# round-trip.
+if axonflow_handle_auth_failure "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; then
+  axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent at ${ENDPOINT} rejected authentication (HTTP 401${SAID}), so this tool call is blocked. $(axonflow_auth_cooldown_note) ${AUTH_HINT}"
+fi
+
+# The HTTP status of an answer the lines above did not settle, read by the
+# shared table (scripts/lib/failure-posture.sh). A body that is a JSON-RPC
+# answer (a non-null result, or an error object) is the platform's answer on
+# any status but 429, and goes on to the decision path below: a 403 carrying a
+# policy deny stays a policy deny. Only a body WITHOUT one is judged by status.
+IS_JSONRPC=$(axonflow_is_jsonrpc_answer "$RESPONSE")
+case "$(axonflow_status_class "$HTTP_CODE" "$IS_JSONRPC")" in
+  answer) ;;
+  limit)
+    axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent answered HTTP 429 (a request limit was reached${SAID}), so this tool call is blocked until the limit resets."
+    ;;
+  too_large)
+    axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent at ${ENDPOINT} refused the policy check as too large (HTTP 413${SAID}), so this tool call is blocked. The agent, or a proxy in front of it, limits the request size."
+    ;;
+  refused)
+    axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent at ${ENDPOINT} refused the request (HTTP ${HTTP_CODE}${SAID}), so this tool call is blocked. Check AXONFLOW_ENDPOINT (a redirect means the URL needs changing) and AXONFLOW_AUTH."
+    ;;
+  *)
+    axonflow_pre_ungoverned "the AxonFlow agent answered HTTP ${HTTP_CODE}${SAID}"
+    ;;
+esac
+
+# An empty body from an otherwise-successful call carries no decision (a 204,
+# or a proxy in the way).
 if [ -z "$RESPONSE" ]; then
-  exit 0
+  axonflow_pre_ungoverned "the AxonFlow agent answered HTTP ${HTTP_CODE} with an empty body"
+fi
+
+# A body that is not exactly one JSON document is no usable answer. Two
+# documents (a result and an error, in either order) would each be read by a
+# different line below, and the allow could win.
+if ! axonflow_one_json_document "$RESPONSE"; then
+  axonflow_pre_ungoverned "the AxonFlow agent's answer (HTTP ${HTTP_CODE}) was not one JSON document"
 fi
 
 # Check for JSON-RPC error responses and apply the fail-open / fail-closed
@@ -328,33 +519,27 @@ fi
 #   Auth errors (-32001):       BLOCK — operator must fix AXONFLOW_AUTH
 #   Method not found (-32601):  BLOCK — plugin version mismatch with agent
 #   Invalid params (-32602):    BLOCK — plugin bug, operator should upgrade
-#   Parse errors (-32700):      ALLOW — transient
-#   Internal errors (-32603):   ALLOW — server-side fault, not operator's
+#   Parse errors (-32700):      no usable answer (AXONFLOW_FAIL_MODE)
+#   Internal errors (-32603):   no usable answer (AXONFLOW_FAIL_MODE)
 #   Everything else:            BLOCK — unknown code, fail closed (2026-09-14)
-JSONRPC_ERROR=$(echo "$RESPONSE" | jq -r '.error.message // empty' 2>/dev/null || echo "")
-if [ -n "$JSONRPC_ERROR" ]; then
-  JSONRPC_CODE=$(echo "$RESPONSE" | jq -r '.error.code // 0' 2>/dev/null || echo "0")
+#   An error with no numeric code, or no message, is still an error: it blocks.
+JSONRPC_CODE=$(axonflow_jsonrpc_error_code "$RESPONSE")
+if [ -n "$JSONRPC_CODE" ]; then
+  JSONRPC_ERROR="${PLATFORM_TEXT:-no message}"
   case "$JSONRPC_CODE" in
     -32001|-32601|-32602)
-      # #2943: when a per-user token was sent, name it as a likely cause of a
-      # -32001 auth failure — the platform fails closed on a presented-but-
-      # invalid X-User-Token (expired, revoked, wrong org), and the generic
-      # "fix AxonFlow configuration" guidance would send the operator down
-      # the wrong path. The token VALUE is never printed.
-      USER_TOKEN_HINT=""
-      if [ "$JSONRPC_CODE" = "-32001" ] && [ -n "${AXONFLOW_USER_TOKEN:-}" ]; then
-        USER_TOKEN_HINT=" A per-user token is configured (AXONFLOW_USER_TOKEN / user-token.json) and was sent as X-User-Token — if it is expired, revoked, or minted for a different org, the platform rejects the request; ask your admin to rotate it, or remove it to fall back to shared-credential attribution."
+      HINT_SUFFIX=""
+      if [ "$JSONRPC_CODE" = "-32001" ]; then
+        HINT_SUFFIX="$USER_TOKEN_HINT"
       fi
-      echo "AxonFlow governance blocked: ${JSONRPC_ERROR} (code ${JSONRPC_CODE}). Fix AxonFlow configuration to restore tool access.${USER_TOKEN_HINT}" >&2
-      exit 2
+      axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent refused the policy check (code ${JSONRPC_CODE}; AxonFlow said: \"${JSONRPC_ERROR}\"). Fix AxonFlow configuration to restore tool access.${HINT_SUFFIX}"
       ;;
     -32603|-32700)
-      # Transient or server-side — fail open.
-      exit 0
+      axonflow_pre_ungoverned "the AxonFlow agent answered a server error (code ${JSONRPC_CODE}; AxonFlow said: \"${JSONRPC_ERROR}\")"
       ;;
     *)
       # An unknown code is not a decision: fail closed (ruled 2026-09-14).
-      axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent answered an unexpected error (${JSONRPC_ERROR}, code ${JSONRPC_CODE}), so this tool call is blocked."
+      axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent answered an unexpected error (code ${JSONRPC_CODE}; AxonFlow said: \"${JSONRPC_ERROR}\"), so this tool call is blocked."
       ;;
   esac
 fi
@@ -363,12 +548,11 @@ fi
 TOOL_RESULT=$(echo "$RESPONSE" | jq -r '.result.content[0].text // empty' 2>/dev/null || echo "")
 if [ -z "$TOOL_RESULT" ]; then
   # A JSON-RPC result with no tool result carries no decision: fail closed.
-  # Anything else (no result object at all) is an unexpected format: fail
-  # open for robustness, as before.
+  # Anything else (no result object at all) is not a usable answer.
   if echo "$RESPONSE" | jq -e 'has("result")' >/dev/null 2>&1; then
     axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent returned a policy result without a decision, so this tool call is blocked."
   fi
-  exit 0
+  axonflow_pre_ungoverned "the AxonFlow agent's answer (HTTP ${HTTP_CODE}) was not a policy result"
 fi
 
 # A result flagged isError, or one without a boolean `allowed`, is not a
@@ -379,34 +563,31 @@ RESULT_IS_ERROR=$(echo "$RESPONSE" | jq -r 'if .result.isError == true then "tru
 HAS_DECISION=$(echo "$TOOL_RESULT" | jq -r 'if (.allowed | type) == "boolean" then "true" else "false" end' 2>/dev/null || echo "false")
 if [ "$RESULT_IS_ERROR" = "true" ] || [ "$HAS_DECISION" != "true" ]; then
   if axonflow_handle_envelope_text "$TOOL_RESULT"; then
-    axonflow_pre_deny "$AXONFLOW_LIMIT_DENY_REASON"
+    axonflow_pre_deny "$(axonflow_limit_deny_reason)"
   fi
-  RESULT_ERROR=$(echo "$TOOL_RESULT" | jq -r '.error // empty' 2>/dev/null || echo "")
+  RESULT_ERROR=$(axonflow_result_text "$TOOL_RESULT" '.error // empty')
   axonflow_pre_deny "AxonFlow governance blocked: ${RESULT_ERROR:-the AxonFlow agent returned a policy result without a decision}, so this tool call is blocked."
 fi
 
 # Note: jq's // operator treats false as falsy, so .allowed // true returns
 # true even when .allowed is false. Use explicit if/else instead.
 ALLOWED=$(echo "$TOOL_RESULT" | jq -r 'if .allowed == false then "false" else "true" end' 2>/dev/null || echo "true")
-BLOCK_REASON=$(echo "$TOOL_RESULT" | jq -r '.block_reason // empty' 2>/dev/null || echo "")
-POLICIES_EVALUATED=$(echo "$TOOL_RESULT" | jq -r '.policies_evaluated // 0' 2>/dev/null || echo "0")
+BLOCK_REASON=$(axonflow_result_text "$TOOL_RESULT" '.block_reason // empty')
+POLICIES_EVALUATED=$(axonflow_result_text "$TOOL_RESULT" '.policies_evaluated // 0')
 
 # Plugin Batch 1 (ADR-042 + ADR-043): richer block context surfaced when
 # the platform is v7.1.0+. All fields are optional; absent on older platforms.
-DECISION_ID=$(echo "$TOOL_RESULT" | jq -r '.decision_id // empty' 2>/dev/null || echo "")
-RISK_LEVEL=$(echo "$TOOL_RESULT" | jq -r '.risk_level // empty' 2>/dev/null || echo "")
+# Every field printed below came from the network: its control characters go.
+DECISION_ID=$(axonflow_result_text "$TOOL_RESULT" '.decision_id // empty')
+RISK_LEVEL=$(axonflow_result_text "$TOOL_RESULT" '.risk_level // empty')
 OVERRIDE_AVAILABLE=$(echo "$TOOL_RESULT" | jq -r '.override_available // false' 2>/dev/null || echo "false")
-OVERRIDE_EXISTING_ID=$(echo "$TOOL_RESULT" | jq -r '.override_existing_id // empty' 2>/dev/null || echo "")
+OVERRIDE_EXISTING_ID=$(axonflow_result_text "$TOOL_RESULT" '.override_existing_id // empty')
 
 if [ "$ALLOWED" = "false" ]; then
-  # Record the blocked attempt in the audit trail (fire-and-forget)
-  curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -X POST "${ENDPOINT}/api/v1/mcp-server" \
-    -H "Content-Type: application/json" \
-    -H "Accept: application/json" \
-    "${AUTH_HEADER[@]}" \
-    -d "$(jq -n \
+  # Record the blocked attempt in the audit trail (fire-and-forget). The
+  # statement reaches jq on stdin, never as a command-line argument.
+  printf '%s' "$STATEMENT" | jq -Rsc \
       --arg tn "$TOOL_NAME" \
-      --arg stmt "$STATEMENT" \
       --arg reason "$BLOCK_REASON" \
       --arg policies "$POLICIES_EVALUATED" \
       '{
@@ -419,16 +600,21 @@ if [ "$ALLOWED" = "false" ]; then
             tool_name: $tn,
             caller_name: "cursor",
             tool_type: "cursor",
-            input: {statement: $stmt},
+            input: {statement: .},
             output: {policy_decision: "blocked", block_reason: $reason, policies_evaluated: $policies},
             success: false,
             error_message: ("Blocked by policy: " + $reason)
           }
         }
-      }')" > /dev/null 2>&1 &
+      }' 2>/dev/null | curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -X POST "${ENDPOINT}/api/v1/mcp-server" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json" \
+    "${AUTH_HEADER[@]}" \
+    --data-binary @- > /dev/null 2>&1 &
 
-  # Cursor: exit 2 = block tool execution. Reason on stderr.
-  # Plugin Batch 1: append richer context when the platform surfaces it.
+  # Plugin Batch 1: append richer context when the platform surfaces it. The
+  # override hint renders only on platforms before v11.0.0: from v11 the
+  # platform never reports an override as available (overrides are retired).
   CONTEXT_SUFFIX=""
   if [ -n "$DECISION_ID" ]; then
     CONTEXT_SUFFIX=" [decision: $DECISION_ID"
@@ -444,14 +630,13 @@ if [ "$ALLOWED" = "false" ]; then
     fi
     CONTEXT_SUFFIX="$CONTEXT_SUFFIX]"
   fi
-  echo "AxonFlow policy violation: ${BLOCK_REASON} (${POLICIES_EVALUATED} policies evaluated)${CONTEXT_SUFFIX}" >&2
-  exit 2
+  axonflow_pre_deny "AxonFlow policy violation: ${BLOCK_REASON} (${POLICIES_EVALUATED} policies evaluated)${CONTEXT_SUFFIX}"
 fi
 
 # For shell write commands (echo/printf/cat redirecting to file), also scan
 # the content for PII via check_output before allowing.
 if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
-  if echo "$STATEMENT" | grep -qE '(>>?\s*\S|tee\s)'; then
+  if grep -qE '(>>?\s*\S|tee\s)' <<<"$STATEMENT"; then
     # Extract content from shell write commands. Known limitations:
     # - Does not handle variable interpolation ($VAR in strings)
     # - Does not handle escaped quotes within strings
@@ -460,13 +645,14 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
     WRITE_CONTENT=$(echo "$STATEMENT" | sed -E 's/\s*[12]?>>\s*\S+.*//; s/\s*\|\s*tee\s.*//')
     WRITE_CONTENT=$(echo "$WRITE_CONTENT" | sed -E "s/^(echo|printf|cat[[:space:]]+<<-?[[:space:]]*'?[A-Za-z_]+[^ ]*'?)[[:space:]]+//; s/^[\"']//; s/[\"']$//")
     if [ -n "$WRITE_CONTENT" ] && [ ${#WRITE_CONTENT} -gt 5 ]; then
-      PII_RESPONSE=$(curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -X POST "${ENDPOINT}/api/v1/mcp-server" \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        "${AUTH_HEADER[@]}" \
-        -d "$(jq -n \
-          --arg ct "$CONNECTOR_TYPE" \
-          --arg msg "$WRITE_CONTENT" \
+      # A second governed check, answered through the same status table as the
+      # policy check above: a no-usable-answer blocks unless AXONFLOW_FAIL_MODE
+      # is open, and a refusal or an answer without a decision blocks. It used
+      # to treat any failure as "no PII" and let the write run silently.
+      PII_REQUEST=$(mktemp)
+      PII_BODY=$(mktemp)
+      trap 'rm -f "$PRECHECK_REQUEST" "$PRECHECK_BODY" "$PRECHECK_HEADERS" "$PII_REQUEST" "$PII_BODY"; axonflow_bootstrap_cleanup' EXIT
+      if ! printf '%s' "$WRITE_CONTENT" | jq -Rsc --arg ct "$CONNECTOR_TYPE" \
           '{
             jsonrpc: "2.0",
             id: "hook-pii",
@@ -475,31 +661,82 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
               name: "check_output",
               arguments: {
                 connector_type: $ct,
-                message: $msg
+                message: .
               }
             }
-          }')" 2>/dev/null || echo "")
+          }' > "$PII_REQUEST" 2>/dev/null || [ ! -s "$PII_REQUEST" ]; then
+        axonflow_pre_deny "AxonFlow governance blocked: the PII check request for this shell write could not be built, so the write was never checked and is blocked."
+      fi
+      REQUEST_TIMEOUT_SECONDS=$(axonflow_budget_timeout "$CONFIGURED_TIMEOUT_SECONDS" 1)
+      if [ "$REQUEST_TIMEOUT_SECONDS" -lt 1 ]; then
+        axonflow_pre_ungoverned "the hook's ${_AXONFLOW_HOOK_BUDGET_SECONDS}-second time budget ran out before the AxonFlow agent at ${ENDPOINT} could be asked for the shell-write PII check"
+      fi
+      PII_HTTP=$(curl -s --max-time "$REQUEST_TIMEOUT_SECONDS" -o "$PII_BODY" -w '%{http_code}' \
+        -X POST "${ENDPOINT}/api/v1/mcp-server" \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        "${AUTH_HEADER[@]}" \
+        --data-binary @"$PII_REQUEST" 2>/dev/null)
+      PII_CURL_EXIT=$?
+      if [ "$PII_CURL_EXIT" -ne 0 ]; then
+        axonflow_pre_ungoverned "the AxonFlow agent at ${ENDPOINT} could not be reached for the shell-write PII check (curl exit ${PII_CURL_EXIT})"
+      fi
+      PII_RESPONSE=$(cat "$PII_BODY")
+      PII_TEXT=$(axonflow_platform_text "$PII_RESPONSE")
+      PII_SAID="${PII_TEXT:+; AxonFlow said: \"$PII_TEXT\"}"
+      case "$(axonflow_status_class "$PII_HTTP" "$(axonflow_is_jsonrpc_answer "$PII_RESPONSE")")" in
+        answer) ;;
+        limit|too_large|refused)
+          axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent refused the shell-write PII check (HTTP ${PII_HTTP}${PII_SAID}), so this tool call is blocked."
+          ;;
+        *)
+          axonflow_pre_ungoverned "the AxonFlow agent answered the shell-write PII check with HTTP ${PII_HTTP}${PII_SAID}"
+          ;;
+      esac
+      if [ -z "$PII_RESPONSE" ] || ! axonflow_one_json_document "$PII_RESPONSE"; then
+        axonflow_pre_ungoverned "the AxonFlow agent's answer to the shell-write PII check (HTTP ${PII_HTTP}) was empty or not one JSON document"
+      fi
+      PII_RPC_CODE=$(axonflow_jsonrpc_error_code "$PII_RESPONSE")
+      case "$PII_RPC_CODE" in
+        "") ;;
+        -32603|-32700)
+          axonflow_pre_ungoverned "the AxonFlow agent answered the shell-write PII check with a server error (code ${PII_RPC_CODE}${PII_SAID})"
+          ;;
+        *)
+          axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent refused the shell-write PII check (code ${PII_RPC_CODE}${PII_SAID}), so this tool call is blocked."
+          ;;
+      esac
       if [ -n "$PII_RESPONSE" ]; then
         PII_RESULT=$(echo "$PII_RESPONSE" | jq -r '.result.content[0].text // empty' 2>/dev/null || echo "")
+        if [ "$(printf '%s' "$PII_RESULT" | jq -r 'if (.allowed | type) == "boolean" then "true" else "false" end' 2>/dev/null)" != "true" ] || \
+           [ "$(printf '%s' "$PII_RESPONSE" | jq -r '.result.isError // false' 2>/dev/null)" = "true" ]; then
+          if axonflow_handle_envelope_text "$PII_RESULT"; then
+            axonflow_pre_deny "$(axonflow_limit_deny_reason)"
+          fi
+          axonflow_pre_deny "AxonFlow governance blocked: the shell-write PII check returned no decision, so this tool call is blocked."
+        fi
+        if [ "$(printf '%s' "$PII_RESULT" | jq -r 'if .allowed == false then "false" else "true" end' 2>/dev/null)" = "false" ]; then
+          axonflow_pre_deny "AxonFlow policy violation: the content this shell command writes was blocked by policy ($(axonflow_result_text "$PII_RESULT" '.block_reason // empty'))."
+        fi
         REDACTED=$(echo "$PII_RESULT" | jq -r '.redacted_message // empty' 2>/dev/null || echo "")
         if [ -n "$REDACTED" ] && [ "$REDACTED" != "null" ] && [ "$REDACTED" != "$WRITE_CONTENT" ]; then
           # Respect PII_ACTION: block (default) | warn | log | redact
           PII_ACTION="${PII_ACTION:-redact}"
           case "$PII_ACTION" in
             block)
-              echo "AxonFlow: PII detected in file write content." >&2
-              exit 2
+              axonflow_pre_deny "AxonFlow: PII detected in file write content."
               ;;
             redact)
+              REDACTED_CLEAN=$(axonflow_clean_block "$REDACTED")
               jq -n \
-                --arg redacted "$REDACTED" \
+                --arg redacted "$REDACTED_CLEAN" \
                 --arg user "AxonFlow: PII detected — rewriting with redacted content." \
-                --arg agent "The write contained PII and was blocked. Retry the write immediately using this exact redacted content instead of the original: $REDACTED" \
+                --arg agent "The write contained PII and was blocked. Retry the write immediately using this exact redacted content instead of the original: $REDACTED_CLEAN" \
                 '{permission: "deny", user_message: $user, agent_message: $agent}'
               exit 0
               ;;
             warn)
-              echo "AxonFlow warning: PII detected in file write content. Consider using: ${REDACTED}" >&2
+              echo "AxonFlow warning: PII detected in file write content. Consider using: $(axonflow_clean_block "$REDACTED")" >&2
               ;;
             *)
               # log or anything else — allow silently

@@ -332,7 +332,7 @@ chmod 0600 "$HOME/.config/axonflow/license-token"
 # 1.6 — post-tool-audit.sh also forwards the header.
 echo "  1.6 post-tool-audit.sh forwards X-License-Token (audit must be tier-aware too)"
 truncate -s 0 "$CAPTURE_FILE"
-POST_INPUT='{"tool_name":"Bash","tool_input":{"command":"echo hi"},"tool_response":{"stdout":"hi","exitCode":0}}'
+POST_INPUT='{"tool_name":"Shell","tool_input":{"command":"echo hi"},"tool_output":"{\"exitCode\":0,\"stdout\":\"hi\"}"}'
 echo "$POST_INPUT" | \
   AXONFLOW_ENDPOINT="$ENDPOINT" AXONFLOW_LICENSE_TOKEN="$TEST_TOKEN" \
   AXONFLOW_TELEMETRY=off DO_NOT_TRACK=1 \

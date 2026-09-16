@@ -9,8 +9,11 @@
 # (it only fires on 429/403), and the script falls through and re-issues
 # the same 401 on the next tool call. Tight retry loop.
 #
-# Fix: axonflow_handle_auth_failure stamps a 5-minute throttle on 401 so
-# subsequent hook fires short-circuit via axonflow_throttle_active.
+# Fix: axonflow_handle_auth_failure stamps a 5-minute cooldown on 401 so
+# subsequent hook fires answer locally instead of re-sending the request.
+# The cooldown BLOCKS governed tool calls (the hooks deny while it holds; a
+# rejected credential never lets a tool call run), and the nudge says so:
+# it names the cooldown's seconds and the stamp file to delete after a fix.
 
 set -uo pipefail
 
@@ -144,8 +147,29 @@ test_401_stamps_throttle() {
   # User-visible nudge surfaces the AXONFLOW_AUTH instruction on stderr.
   assert_contains "stderr identifies HTTP 401" "$(cat "$stderr_out")" \
     "Authentication failed (HTTP 401)"
-  assert_contains "stderr names the 5-minute pause" "$(cat "$stderr_out")" \
-    "paused for 5 minutes"
+  # The nudge says governed calls are BLOCKED, not paused: the old wording
+  # ("paused for 5 minutes") described calls running ungoverned.
+  local nudge; nudge=$(cat "$stderr_out")
+  if grep -qF "Governed tool calls are blocked" <<<"$nudge"; then
+    assert_eq "stderr says governed tool calls are blocked" "ok" "ok"
+  else
+    assert_eq "stderr says governed tool calls are blocked" "ok" "missing in: $nudge"
+  fi
+  if grep -qF "for 300 seconds" <<<"$nudge"; then
+    assert_eq "stderr names the cooldown's seconds (300)" "ok" "ok"
+  else
+    assert_eq "stderr names the cooldown's seconds (300)" "ok" "missing in: $nudge"
+  fi
+  if grep -qF "$tf" <<<"$nudge"; then
+    assert_eq "stderr names the stamp file" "ok" "ok"
+  else
+    assert_eq "stderr names the stamp file" "ok" "missing '$tf' in: $nudge"
+  fi
+  if grep -qi "paused" <<<"$nudge"; then
+    assert_eq "stderr no longer says the calls are paused" "ok" "found 'paused' in: $nudge"
+  else
+    assert_eq "stderr no longer says the calls are paused" "ok" "ok"
+  fi
   assert_contains "stderr links the dashboard" "$(cat "$stderr_out")" \
     "https://getaxonflow.com/dashboard"
 
@@ -205,6 +229,9 @@ test_throttle_active_after_401() {
 
   axonflow_throttle_active
   assert_eq "throttle active right after 401" "0" "$?"
+  # The stamp gates governed calls: the hooks read axonflow_governed_stamp
+  # and block while it prints auth_failure.
+  assert_eq "axonflow_governed_stamp → auth_failure right after 401" "auth_failure" "$(axonflow_governed_stamp)"
 
   rm -f "$body" "$headers"
 }
@@ -239,7 +266,7 @@ test_no_stdout_bytes() {
 # auth-failure nudge. They must use separate stamp files (mirrors the
 # codex plugin pattern). Without this, the 401 throttle stamp is still
 # written but the user-visible nudge is silently dropped — operator sees
-# their tools fall open with no idea why.
+# their tools blocked with no idea why.
 # ---------------------------------------------------------------------------
 test_401_nudge_not_suppressed_by_envelope_stamp() {
   local cache; cache=$(mk_tmp_cache)
@@ -324,7 +351,7 @@ test_401_nudge_suppressed_same_day_for_own_stamp() {
 # ---------------------------------------------------------------------------
 # Run all tests
 # ---------------------------------------------------------------------------
-run_test "T1: HTTP 401 stamps throttle (5-min cooldown, auth_failure limit_type, stderr nudge)" test_401_stamps_throttle
+run_test "T1: HTTP 401 stamps the cooldown (5 min, auth_failure limit_type, stderr nudge says calls are blocked)" test_401_stamps_throttle
 run_test "T2: non-401 statuses ignored (200/403/404/429/500/empty)" test_non_401_status_ignored
 run_test "T3: throttle_active reports active right after 401" test_throttle_active_after_401
 run_test "T4: no stdout bytes (hook-protocol guard)" test_no_stdout_bytes

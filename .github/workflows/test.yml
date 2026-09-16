@@ -23,7 +23,7 @@ jobs:
 
       - name: Check shell script syntax
         run: |
-          for f in scripts/*.sh tests/*.sh tests/e2e/*.sh; do
+          for f in scripts/*.sh scripts/lib/*.sh tests/*.sh tests/e2e/*.sh; do
             bash -n "$f" && echo "✓ $f" || exit 1
           done
 

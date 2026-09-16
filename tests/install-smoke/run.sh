@@ -45,7 +45,7 @@ pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
 
 # 1. Stage the plugin's install payload.
 echo "stage to $STAGE_DIR"
-mkdir -p "$STAGE_DIR/.cursor-plugin" "$STAGE_DIR/hooks" "$STAGE_DIR/scripts"
+mkdir -p "$STAGE_DIR/.cursor-plugin" "$STAGE_DIR/hooks" "$STAGE_DIR/scripts/lib"
 cp -p "$PLUGIN_DIR/.cursor-plugin/plugin.json" "$STAGE_DIR/.cursor-plugin/" \
   || fail "missing .cursor-plugin/plugin.json"
 cp -p "$PLUGIN_DIR/mcp.json" "$STAGE_DIR/" \
@@ -54,13 +54,17 @@ cp -p "$PLUGIN_DIR/hooks/hooks.json" "$STAGE_DIR/hooks/" \
   || fail "missing hooks/hooks.json"
 cp -p "$PLUGIN_DIR/scripts/"*.sh "$STAGE_DIR/scripts/" \
   || fail "missing scripts/*.sh"
+# The failure-posture table both hooks source (without it they block, naming it).
+cp -p "$PLUGIN_DIR/scripts/lib/"*.sh "$STAGE_DIR/scripts/lib/" \
+  || fail "missing scripts/lib/*.sh"
 chmod +x "$STAGE_DIR/scripts/"*.sh
 
 # 2. Validate file list.
 for f in .cursor-plugin/plugin.json mcp.json hooks/hooks.json \
          scripts/pre-tool-check.sh scripts/post-tool-audit.sh \
          scripts/telemetry-ping.sh scripts/mcp-auth-headers.sh \
-         scripts/recover-credentials.sh scripts/status.sh; do
+         scripts/recover-credentials.sh scripts/status.sh \
+         scripts/lib/failure-posture.sh; do
   if [ -f "$STAGE_DIR/$f" ]; then pass "staged $f"
   else fail "missing $f after stage"
   fi
