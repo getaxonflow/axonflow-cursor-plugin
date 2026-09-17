@@ -1,5 +1,7 @@
 # Cursor revoke-override runtime evidence
 
+> **Superseded by AxonFlow v11.0.0 (read this first).** The run recorded below was captured on 2026-05-04, before v11.0.0 retired session overrides. Its pass criteria describe behaviour v11.0.0 no longer has: `create_override` and `delete_override` now answer `LEGACY_POLICY_WRITE_FROZEN` (or, for `create_override` on a session with no per-user identity, the identity refusal), and no override is created. `MANUAL_RUNBOOK.md` beside this file now expects those answers. **No new capture exists:** there is no headless Cursor, and no supervised Cursor IDE launch was permitted for the change that retargeted the runbook. The release gate (`test.sh`, `runtime-e2e/_lib/cursor-gate.sh`) reads the run date recorded below, so it fails until the runbook is run again and this file replaced.
+
 **Run date (UTC):** 2026-05-04 08:47
 **Cursor version:** 3.2.16
 **Stack endpoint:** http://localhost:8080

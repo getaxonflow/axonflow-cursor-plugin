@@ -47,3 +47,12 @@ behavior MUST exercise the actual Cursor binary's MCP-config parser
 + HTTP client. Mocking Cursor's behavior with our own JSON-loader
 proves nothing — the whole point of the test is "does Cursor actually
 honor `headers` in `mcp.json`?".
+
+## The capability handshake legs (cursor#95) — evidence-gated, OWED
+
+`test.sh` also carries two legs for the ADR-065 capability handshake, run only with `AXONFLOW_E2E_CURSOR_HANDSHAKE=1`:
+
+1. With `AXONFLOW_PEP_AUDIENCE` unset, Cursor, reading the shipped `mcp.json`, must send **no** `X-Axonflow-PEP-Handshake` header. An empty one is malformed, and the platform refuses the request (HTTP 400, `pep_handshake_malformed`).
+2. After `scripts/configure-mcp-handshake.sh` has written the header for an audience, every MCP request Cursor sends must carry exactly that value.
+
+They need a supervised Cursor launch and a logging proxy that records `X-Axonflow-PEP-Handshake=<value>` for each request where the header is present. **No run exists yet:** a Cursor IDE launch was not permitted for the change that added them, so this evidence is owed. What is proven without the IDE is wire-level stage 3 of `runtime-e2e/pep_capability_handshake/test.sh`. It expands `mcp.json` the way Cursor documents, against a live agent: no audience, allowed with a redaction; audience configured, refused with `unsupported_obligation`; an empty header, HTTP 400.

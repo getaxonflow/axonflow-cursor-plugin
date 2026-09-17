@@ -45,7 +45,7 @@ pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
 
 # 1. Stage the plugin's install payload.
 echo "stage to $STAGE_DIR"
-mkdir -p "$STAGE_DIR/.cursor-plugin" "$STAGE_DIR/hooks" "$STAGE_DIR/scripts"
+mkdir -p "$STAGE_DIR/.cursor-plugin" "$STAGE_DIR/hooks" "$STAGE_DIR/scripts/lib"
 cp -p "$PLUGIN_DIR/.cursor-plugin/plugin.json" "$STAGE_DIR/.cursor-plugin/" \
   || fail "missing .cursor-plugin/plugin.json"
 cp -p "$PLUGIN_DIR/mcp.json" "$STAGE_DIR/" \
@@ -54,13 +54,17 @@ cp -p "$PLUGIN_DIR/hooks/hooks.json" "$STAGE_DIR/hooks/" \
   || fail "missing hooks/hooks.json"
 cp -p "$PLUGIN_DIR/scripts/"*.sh "$STAGE_DIR/scripts/" \
   || fail "missing scripts/*.sh"
+# The failure-posture table both hooks source (without it they block, naming it).
+cp -p "$PLUGIN_DIR/scripts/lib/"*.sh "$STAGE_DIR/scripts/lib/" \
+  || fail "missing scripts/lib/*.sh"
 chmod +x "$STAGE_DIR/scripts/"*.sh
 
 # 2. Validate file list.
 for f in .cursor-plugin/plugin.json mcp.json hooks/hooks.json \
          scripts/pre-tool-check.sh scripts/post-tool-audit.sh \
          scripts/telemetry-ping.sh scripts/mcp-auth-headers.sh \
-         scripts/recover-credentials.sh scripts/status.sh; do
+         scripts/recover-credentials.sh scripts/status.sh \
+         scripts/lib/failure-posture.sh; do
   if [ -f "$STAGE_DIR/$f" ]; then pass "staged $f"
   else fail "missing $f after stage"
   fi
@@ -104,12 +108,12 @@ mint_axon_jwt() {
 # + client_id surfaced (v1.5.0: label is client_id, on-disk JSON key
 # stays tenant_id for file-format compat — see CHANGELOG v1.5.0).
 FREE_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off bash "$STAGE_DIR/scripts/status.sh" 2>&1)
-if echo "$FREE_OUT" | grep -q "client_id:[[:space:]]*cs_smoke-tenant-xyz"; then
+if echo "$FREE_OUT" | grep "client_id:[[:space:]]*cs_smoke-tenant-xyz" >/dev/null; then
   pass "status.sh surfaces client_id from try-registration.json"
 else
   fail "status.sh missing client_id; output: $FREE_OUT"
 fi
-if echo "$FREE_OUT" | grep -qE "tier[[:space:]]+Free \(no Pro license configured\)"; then
+if echo "$FREE_OUT" | grep -E "tier[[:space:]]+Free \(no Pro license configured\)" >/dev/null; then
   pass "status.sh Free-tier line shape (no Pro license configured)"
 else
   fail "status.sh did not report Free tier; output: $FREE_OUT"
@@ -122,18 +126,18 @@ PRO_TOKEN=$(mint_axon_jwt "$PRO_EXP")
 PRO_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off \
   AXONFLOW_LICENSE_TOKEN="$PRO_TOKEN" \
   bash "$STAGE_DIR/scripts/status.sh" 2>&1)
-if echo "$PRO_OUT" | grep -qE "tier[[:space:]]+Pro \(expires [0-9]{4}-[0-9]{2}-[0-9]{2}, [0-9]+ days remaining\)"; then
+if echo "$PRO_OUT" | grep -E "tier[[:space:]]+Pro \(expires [0-9]{4}-[0-9]{2}-[0-9]{2}, [0-9]+ days remaining\)" >/dev/null; then
   pass "status.sh Pro-active line shape (expires YYYY-MM-DD, N days remaining)"
 else
   fail "status.sh did not report Pro-active line; output: $PRO_OUT"
 fi
 PRO_TAIL4="${PRO_TOKEN: -4}"
-if echo "$PRO_OUT" | grep -qF "AXON-...${PRO_TAIL4}"; then
+if echo "$PRO_OUT" | grep -F "AXON-...${PRO_TAIL4}" >/dev/null; then
   pass "status.sh emits AXON-...XXXX redaction with last-4 chars"
 else
   fail "status.sh missing last-4 redaction; output: $PRO_OUT"
 fi
-if echo "$PRO_OUT" | grep -qF "$PRO_TOKEN"; then
+if echo "$PRO_OUT" | grep -F "$PRO_TOKEN" >/dev/null; then
   fail "status.sh LEAKED full license token to stdout: $PRO_OUT"
 else
   pass "status.sh does not leak full license token"
@@ -146,12 +150,12 @@ EXPIRED_TOKEN=$(mint_axon_jwt "$EXPIRED_EXP")
 EXPIRED_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off \
   AXONFLOW_LICENSE_TOKEN="$EXPIRED_TOKEN" \
   bash "$STAGE_DIR/scripts/status.sh" 2>&1)
-if echo "$EXPIRED_OUT" | grep -qE "tier[[:space:]]+Free \(Pro expired [0-9]{4}-[0-9]{2}-[0-9]{2} — visit https?://[^ ]+ to renew\)"; then
+if echo "$EXPIRED_OUT" | grep -E "tier[[:space:]]+Free \(Pro expired [0-9]{4}-[0-9]{2}-[0-9]{2} — visit https?://[^ ]+ to renew\)" >/dev/null; then
   pass "status.sh Pro-expired line shape (Pro expired YYYY-MM-DD — visit ... to renew)"
 else
   fail "status.sh did not report Pro-expired line; output: $EXPIRED_OUT"
 fi
-if echo "$EXPIRED_OUT" | grep -qF "$EXPIRED_TOKEN"; then
+if echo "$EXPIRED_OUT" | grep -F "$EXPIRED_TOKEN" >/dev/null; then
   fail "status.sh LEAKED expired token to stdout"
 else
   pass "status.sh redacts expired token"
@@ -160,7 +164,7 @@ fi
 # Missing-registration path: hint should reference the recovery script.
 rm -f "$STATUS_HOME/.config/axonflow/try-registration.json"
 NOREG_OUT=$(HOME="$STATUS_HOME" AXONFLOW_TELEMETRY=off bash "$STAGE_DIR/scripts/status.sh" 2>&1)
-if echo "$NOREG_OUT" | grep -q "recover-credentials.sh"; then
+if echo "$NOREG_OUT" | grep "recover-credentials.sh" >/dev/null; then
   pass "status.sh surfaces recovery hint when registration file is missing"
 else
   fail "status.sh missing recovery hint; output: $NOREG_OUT"
@@ -220,16 +224,16 @@ set -e
 if [ "$DENY_EXIT" = "2" ]; then pass "deny path exits 2 (block)"
 else fail "deny path exit=$DENY_EXIT (expected 2). stderr: $DENY_STDERR"
 fi
-if echo "$DENY_STDERR" | grep -q "policy violation"; then pass "deny path emits 'policy violation' on stderr"
+if echo "$DENY_STDERR" | grep "policy violation" >/dev/null; then pass "deny path emits 'policy violation' on stderr"
 else fail "deny path stderr missing 'policy violation': $DENY_STDERR"
 fi
-if echo "$DENY_STDERR" | grep -q "decision: dec_test_deny_001"; then pass "deny path stderr surfaces decision_id"
+if echo "$DENY_STDERR" | grep "decision: dec_test_deny_001" >/dev/null; then pass "deny path stderr surfaces decision_id"
 else fail "deny path stderr missing decision_id"
 fi
-if echo "$DENY_STDERR" | grep -q "risk: high"; then pass "deny path stderr surfaces risk_level"
+if echo "$DENY_STDERR" | grep "risk: high" >/dev/null; then pass "deny path stderr surfaces risk_level"
 else fail "deny path stderr missing risk_level"
 fi
-if echo "$DENY_STDERR" | grep -q "override available"; then pass "deny path stderr surfaces override_available"
+if echo "$DENY_STDERR" | grep "override available" >/dev/null; then pass "deny path stderr surfaces override_available"
 else fail "deny path stderr missing override_available"
 fi
 

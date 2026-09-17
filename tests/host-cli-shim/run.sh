@@ -59,7 +59,7 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 echo "stage plugin to $STAGE_DIR/plugin"
 PLUGIN_STAGE="$STAGE_DIR/plugin"
-mkdir -p "$PLUGIN_STAGE/.cursor-plugin" "$PLUGIN_STAGE/hooks" "$PLUGIN_STAGE/scripts"
+mkdir -p "$PLUGIN_STAGE/.cursor-plugin" "$PLUGIN_STAGE/hooks" "$PLUGIN_STAGE/scripts/lib"
 
 cp -p "$PLUGIN_DIR/.cursor-plugin/plugin.json" "$PLUGIN_STAGE/.cursor-plugin/" \
   || { fail "missing .cursor-plugin/plugin.json"; exit 1; }
@@ -70,6 +70,9 @@ cp -p "$PLUGIN_DIR/hooks/hooks.json" "$PLUGIN_STAGE/hooks/" \
 
 cp -p "$PLUGIN_DIR/scripts"/*.sh "$PLUGIN_STAGE/scripts/"
 chmod +x "$PLUGIN_STAGE/scripts/"*.sh
+# The failure-posture table both hooks source (without it they block, naming it).
+cp -p "$PLUGIN_DIR/scripts/lib"/*.sh "$PLUGIN_STAGE/scripts/lib/" \
+  || { fail "missing scripts/lib/*.sh"; exit 1; }
 
 pass "plugin payload staged"
 
@@ -162,7 +165,7 @@ pretooluse_exit_code() {
 fire_posttooluse() {
   local statement="${1:-echo benign}"
   local stdout="${2:-ok}"
-  echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$statement\"},\"tool_response\":{\"stdout\":\"$stdout\",\"exitCode\":0}}" | \
+  jq -nc --arg c "$statement" --arg o "$stdout" '{tool_name: "Shell", tool_input: {command: $c}, tool_output: ({exitCode: 0, stdout: $o} | tojson)}' | \
     HOME="$HOME_DIR" \
     AXONFLOW_ENDPOINT="$ENDPOINT" \
     AXONFLOW_TELEMETRY=off \
@@ -368,7 +371,7 @@ DENY_EXIT=$(pretooluse_exit_code "deny-me operation")
 [ "$DENY_EXIT" = "2" ] && pass "Deny: preToolUse exited 2 (block)" \
   || fail "Deny: preToolUse exit code was $DENY_EXIT (expected 2)"
 
-if echo "$DENY_STDERR" | grep -q "policy violation\|stub-deny"; then
+if echo "$DENY_STDERR" | grep "policy violation\|stub-deny" >/dev/null; then
   pass "Deny: preToolUse stderr surfaced block reason"
 else
   fail "Deny: preToolUse stderr missing block reason: $DENY_STDERR"
