@@ -725,7 +725,7 @@ if [ "$TOOL_NAME" = "Shell" ] || [ "$TOOL_NAME" = "Bash" ]; then
         fi
         REDACTED=$(echo "$PII_RESULT" | jq -r '.redacted_message // empty' 2>/dev/null || echo "")
         if [ -n "$REDACTED" ] && [ "$REDACTED" != "null" ] && [ "$REDACTED" != "$WRITE_CONTENT" ]; then
-          # Respect PII_ACTION: block (default) | warn | log | redact
+          # Respect PII_ACTION: redact (default) | block | warn | log
           PII_ACTION="${PII_ACTION:-redact}"
           case "$PII_ACTION" in
             block)
