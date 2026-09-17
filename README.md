@@ -254,7 +254,7 @@ export AXONFLOW_USER_TOKEN=<token minted by your org admin>
 
 ## Pro tier license token (`AXONFLOW_LICENSE_TOKEN`)
 
-Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day, 2 active custom policies, 1 HITL approval per rolling 7d) to **30-day retention**, **2,000 events / day**, **unlimited active custom policies**, **unlimited HITL approvals**, and adds the **LLM cost pre-flight** tool (estimate token cost for a multi-step plan before it runs). 90-day window, one-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
+Plugin Pro extends the Free baseline (3-day audit retention, 200 governed events / day, 2 HITL approvals per rolling 7d) to **30-day retention**, **2,000 events / day**, **20 HITL approvals per rolling 7d**, and adds the **LLM cost pre-flight** tool (estimate token cost for a multi-step plan before it runs). 90-day window, one-time **$9.99 USD** payment, no auto-renewal, 14-day no-questions refund. See [getaxonflow.com/pricing](https://getaxonflow.com/pricing/) for the full breakdown and the Stripe buy button.
 
 To activate Pro on this Cursor install:
 
@@ -327,7 +327,7 @@ In the chat, use the `/axonflow-status` skill to have the agent run this for you
 
 ### Free-tier limits and upgrade prompts
 
-When the plugin's hooks hit a Free-tier cap (200 events/day, 2 active custom policies, 1 HITL approval per rolling 7d, or a Pro-only feature), the agent returns a structured upgrade envelope. The plugin parses it and prints a single-line nudge to stderr — visible in Cursor's hook log:
+When the plugin's hooks hit a Free-tier cap (200 events/day, 2 HITL approvals per rolling 7d, or a Pro-only feature), the agent returns a structured upgrade envelope. The plugin parses it and prints a single-line nudge to stderr — visible in Cursor's hook log:
 
 ```
 [AxonFlow] Daily limit reached on Free tier (200 events). Pro raises this to 2,000/day. Resets at midnight UTC.
@@ -460,9 +460,9 @@ Beyond automatic hooks, the agent's MCP server exposes **15 tools** Cursor can i
 | Tool | Free access | Pro access |
 |------|-------------|------------|
 | `axonflow_get_tenant_id` | Visible + callable — returns tenant_id, server-resolved tier, upgrade URL | Same |
-| `axonflow_list_pro_features` | Visible + callable — locked Pro feature list (5 differentiators + $9.99 / 90-day pricing) | Same |
-| `axonflow_request_approval` | Visible + 1 per rolling 7d | Unlimited |
-| `axonflow_create_tenant_policy` | Visible + 2 active max | Unlimited |
+| `axonflow_list_pro_features` | Visible + callable — locked Pro feature list (4 differentiators + $9.99 / 90-day pricing) | Same |
+| `axonflow_request_approval` | Visible + 2 per rolling 7d | Visible + 20 per rolling 7d |
+| `axonflow_create_tenant_policy` | Retired in v11: refuses and names the typed authoring route | Same |
 | `axonflow_get_cost_estimate` | Filtered out of `tools/list` — Pro-only | Visible + callable |
 
 When a Free-tier cap is hit on these tools, the agent returns a structured upgrade envelope (same shape as the 429 daily-quota envelope) and the plugin surfaces the upgrade prompt to stderr — see [Free-tier limits and upgrade prompts](#free-tier-limits-and-upgrade-prompts).
@@ -473,7 +473,7 @@ See [Session Overrides](https://docs.getaxonflow.com/docs/governance/overrides/)
 
 ## Free-tier limits and upgrade prompts
 
-When the plugin's hooks hit a Free-tier cap (200 events/day, 2 active custom policies, 1 HITL approval per rolling 7d, or a Pro-only feature), the agent returns a structured upgrade envelope. The plugin parses it and prints a single-line nudge to stderr — for example:
+When the plugin's hooks hit a Free-tier cap (200 events/day, 2 HITL approvals per rolling 7d, or a Pro-only feature), the agent returns a structured upgrade envelope. The plugin parses it and prints a single-line nudge to stderr — for example:
 
 ```
 [AxonFlow] Daily limit reached on Free tier (200 events). Pro raises this to 2,000/day. Resets at midnight UTC.
