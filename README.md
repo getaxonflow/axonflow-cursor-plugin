@@ -24,7 +24,7 @@ The gaps start surfacing the moment Cursor moves from one developer's laptop to 
 | SQL-injection detection on MCP queries | MCP server's problem | **30+ patterns evaluated on every MCP tool call** |
 | Compliance-grade audit trail | Session logs, not compliance-formatted | **Every governed call recorded with policies, decision, duration** |
 | Decision explainability after a block | Generic hook failure message | **`decision_id` surfaced in stderr; `explain_decision` MCP tool returns the full record** |
-| Self-service, time-bounded exceptions | Not available | **`create_override` with mandatory justification, fully audited** |
+| A governed call when AxonFlow cannot decide | Not addressed | **A rejected credential, a limit, a refusal or an unreachable agent blocks the call ([posture](#when-axonflow-cannot-decide))** |
 | File-write protection for editor config | Not addressed | **`.cursor/settings.json` and `.cursorrules` protected by policy** |
 
 You get all of that with no change to how developers use Cursor. Hooks fire on every governed tool call, the deny message tells you why, and MCP tools are there when you want to investigate or unblock.
@@ -40,8 +40,8 @@ Cursor selects a tool (Shell, Write, Edit, MCP, etc.)
 PreToolUse hook fires automatically
     │ → check_policy("cursor.Shell", "curl 169.254.169.254")
     │
-    ├─ BLOCKED (exit 2) → Cursor receives denial with decision_id + risk_level
-    │                     in stderr; agent can call explain_decision / create_override
+    ├─ BLOCKED (exit 2) → Cursor receives the denial with decision_id (stderr,
+    │                     and the deny JSON on stdout); agent can call explain_decision
     │
     └─ ALLOWED (exit 0) → Tool executes normally
                       │
@@ -57,10 +57,7 @@ PreToolUse hook fires automatically
 
 **Governed tools:** `Shell`, `Write`, `Edit`, `Read`, `Task`, `NotebookEdit`, and all MCP tools (`mcp__*`). Cursor maps Claude Code's `Bash` tool to `Shell`.
 
-**Fail behavior:**
-- AxonFlow unreachable (network) → fail-open, tool execution continues
-- AxonFlow auth/config error → fail-closed (exit 2), tool call blocked until config is fixed
-- PostToolUse failures → never block (audit and PII scan are best-effort)
+**When AxonFlow cannot decide:** a rejected credential, a limit, a refusal, and (by default, on Cursor) an unreachable agent block the tool call. PostToolUse never blocks; it tells the agent not to use an output it could not check. The full table is in [When AxonFlow cannot decide](#when-axonflow-cannot-decide).
 
 ---
 
@@ -70,7 +67,7 @@ PreToolUse hook fires automatically
 
 Your IDE is where developers feel the tension between safety and speed most sharply. A terse "blocked" on a shell command wastes minutes every time.
 
-**With the plugin:** the deny message carries `decision_id` and `risk_level` in stderr. The developer can ask Cursor to call `explain_decision` to see exactly which policy family triggered. If the decision is overridable, `create_override` produces a time-bounded, audit-logged exception with mandatory justification — without leaving the IDE or opening a separate admin surface.
+**With the plugin:** the deny message carries `decision_id`. The developer can ask Cursor to call `explain_decision` to see exactly which policy family triggered, without leaving the IDE. Changing the verdict is an administrator's edit to the organization's policy: session overrides are retired from AxonFlow v11.0.0.
 
 ### 2. The MCP query that returns too much
 
@@ -88,11 +85,7 @@ Governance has to survive the *next* developer too. Cursor's `.cursor/settings.j
 
 ## Take a governed plugin rollout into production
 
-Solo developers and self-serve teams can use the free 90-day [Plugin Evaluation License](https://getaxonflow.com/plugins/evaluation-license?utm_source=readme_plugin_cursor_eval) to validate hook behavior, policy packs, and override workflows.
-
-Organizations with a dated production requirement, written controls, an executive sponsor, and a technical owner can use AxonFlow's paid [Production Program](https://getaxonflow.com/design-partner?utm_source=readme_plugin_cursor). It takes one scoped workflow into production over 60 or 75 days with Enterprise access, founder-led rollout support, upfront conversion pricing, and a fixed decision date.
-
-Public Design Partner pricing starts at $2,000; the Confidential Paid Pilot starts at $4,000. Prices are subject to eligibility and a signed agreement.
+Solo developers and self-serve teams can use the free 90-day [Plugin Evaluation License](https://getaxonflow.com/plugins/evaluation-license?utm_source=readme_plugin_cursor_eval) to validate hook behavior and policy packs.
 
 ### See AxonFlow in Action
 
@@ -114,9 +107,8 @@ Outgrown Community on a real plugin install? Evaluation unlocks the capacity and
 | HITL approval gates | — | 25 pending, 24h expiry | Unlimited, 24h |
 | Evidence export (CSV/JSON) | — | 5,000 records · 14d window · 3/day | Unlimited |
 | Policy simulation | — | 300/day | Unlimited |
-| Session overrides (self-service unblock) | — | — | Enterprise-only |
 
-Org-wide policies and session overrides are **Enterprise-only** — those are the actual upgrade triggers for plugin users.
+Org-wide policies (an org-root policy that binds every tenant) are capped at 20 on Community and 50 on Evaluation, unlimited on Enterprise. Session overrides are retired from AxonFlow v11.0.0 in every edition.
 
 [Get a free Plugin Evaluation license](https://getaxonflow.com/plugins/evaluation-license?utm_source=readme_plugin_cursor_eval)
 
@@ -334,7 +326,7 @@ When the plugin's hooks hit a Free-tier cap (200 events/day, 2 active custom pol
 [AxonFlow] Upgrade: https://buy.stripe.com/bJe28qbztcdVchjdkw8k800
 ```
 
-The plugin also stamps a local back-off file from the response's `Retry-After` header so subsequent governed calls fall through immediately (no thundering herd against the agent) until the cap clears. The upgrade nudge is shown at most once per UTC day so it doesn't spam every hook.
+The plugin also stamps the shared back-off file ([below](#when-axonflow-cannot-decide)). A request-rate limit (`daily_quota`, `per_minute`) blocks governed calls locally, with no request sent, for at most 300 seconds after it was stamped; then the plugin asks the platform again, which answers the limit again if it still holds. A feature or object-count limit (`feature_pro_only`, `hitl_approvals_window`, `decision_list_size`) shows its nudge and blocks nothing beyond the call it answered. The upgrade nudge is shown at most once per UTC day so it doesn't spam every hook.
 
 ### Recovering lost credentials (`scripts/recover-credentials.sh`)
 
@@ -401,6 +393,17 @@ Resolution precedence on the **hook surfaces** (`pre-tool-check.sh`,
 > warn on stderr instead. Fleet provisioning that needs the MCP plane covered
 > must therefore set the env var (MDM / managed settings), not just the file.
 
+### Capability handshake on the MCP connection (`AXONFLOW_PEP_AUDIENCE`)
+
+The hooks send the ADR-065 capability handshake (`X-Axonflow-PEP-Handshake`) whenever `AXONFLOW_PEP_AUDIENCE` is set. Cursor's MCP connection cannot compute it: `mcp.json` has static headers only, and an unset variable becomes an **empty** header value, which the platform refuses as malformed (HTTP 400, `pep_handshake_malformed`). So the shipped `mcp.json` carries **no** handshake header. To give the MCP connection the handshake, run this from the installed plugin directory after setting the audience, then reload Cursor:
+
+```bash
+cd ~/.cursor/plugins/local/axonflow-cursor-plugin
+AXONFLOW_PEP_AUDIENCE=<your audience> bash scripts/configure-mcp-handshake.sh
+```
+
+It writes the declaration the hooks send (`pep_id` `cursor-plugin`, an empty capability list) into that `mcp.json`. With it, a governed MCP call that would carry a mandatory redaction obligation is refused (`block_reason: unsupported_obligation`) instead of being allowed with a `redacted_message` nothing substitutes. Run it without `AXONFLOW_PEP_AUDIENCE` to remove the header, and again whenever the audience changes. A malformed audience removes the header and exits non-zero. The script builds the declaration from `AXONFLOW_PEP_AUDIENCE` only; if `AXONFLOW_PEP_HANDSHAKE` is already set in the hooks' environment, the hooks send that value as it is, while the MCP entry gets only what this script writes. A symlinked `mcp.json` is written through to its target, which keeps its mode; a file you cannot write is refused and left unchanged. The write replaces the file, so another hard link to it keeps the old content.
+
 The token is a **credential**: the plugin never logs or echoes its value, and
 on the hook surfaces a malformed candidate (whitespace/control/quote bytes — a
 mis-paste) is dropped locally with a diagnostic instead of being sent. Note
@@ -451,9 +454,9 @@ Beyond automatic hooks, the agent's MCP server exposes **15 tools** Cursor can i
 | Tool | Purpose |
 |------|---------|
 | `explain_decision` | Return the full [DecisionExplanation](https://docs.getaxonflow.com/docs/governance/explainability/) for a decision ID |
-| `create_override` | Create a time-bounded, audit-logged session override (mandatory justification) |
-| `delete_override` | Revoke an active session override |
-| `list_overrides` | List active overrides scoped to the caller's tenant |
+| `create_override` | **Retired from AxonFlow v11.0.0**: answers a tool error beginning `LEGACY_POLICY_WRITE_FROZEN: ` (or, with no per-user identity on the session, the identity refusal) and creates nothing |
+| `delete_override` | **Retired from AxonFlow v11.0.0**: answers the same tool error |
+| `list_overrides` | List the overrides recorded for the caller's tenant (an unchanged read; from v11.0.0 an override changes no verdict) |
 
 ### Tenant identity & tier capability (5 — V1 Plugin Pro)
 
@@ -467,7 +470,32 @@ Beyond automatic hooks, the agent's MCP server exposes **15 tools** Cursor can i
 
 When a Free-tier cap is hit on these tools, the agent returns a structured upgrade envelope (same shape as the 429 daily-quota envelope) and the plugin surfaces the upgrade prompt to stderr — see [Free-tier limits and upgrade prompts](#free-tier-limits-and-upgrade-prompts).
 
-See [Session Overrides](https://docs.getaxonflow.com/docs/governance/overrides/).
+**After a block:** the deny carries the `decision_id`; ask Cursor to call `explain_decision` to see which policy fired and why. **Session overrides are retired from AxonFlow v11.0.0:** no override changes a verdict, and a retry does not succeed because one was requested. What changes a verdict is an administrator's edit to the policy in the organization's typed policy document (a shipped system control is in its `system_controls` section), through `/api/v1/typed-policies`.
+
+---
+
+## When AxonFlow cannot decide
+
+Every governed call gets one of these answers. PreToolUse blocks by exiting 2, which Cursor documents as a deny, and also prints Cursor's documented deny JSON on stdout (`{"permission":"deny","user_message":...,"agent_message":...}`, shown to the user and sent to the agent). Which of the two Cursor reads on exit 2 has not been verified in a Cursor session; exit 2 blocks on its own. PostToolUse never blocks: when it could not check an output it tells the agent not to use it, in Cursor's documented `additional_context` (and in `hookSpecificOutput.additionalContext`, the shape the hook emitted before).
+
+| AxonFlow's answer | PreToolUse | PostToolUse |
+|---|---|---|
+| A policy decision (a JSON-RPC result on any HTTP status but 401 and 429) | as decided: a deny blocks | a deny or a redaction is a governance alert |
+| A result that decides nothing (no boolean `allowed`, or `isError`) | **blocked** | alert |
+| **HTTP 401**, with or without a per-user token, and the cooldown it starts | **blocked**, quoting the agent; the cooldown blocks locally for 300 seconds (`_AXONFLOW_AUTH_FAILURE_COOLDOWN_SECONDS`), naming the seconds left and the file to delete | alert |
+| **HTTP 429**, with or without the Free-tier envelope, and a request-rate limit stamp | **blocked**, the limit named | alert |
+| A refusal: a redirect, a 4xx other than 408 without a decision (402 and 413 included), a JSON-RPC error other than `-32603` / `-32700` | **blocked** | alert |
+| The check request could not be built | **blocked** | alert |
+| **No usable answer**: unreachable, timeout, 408, 5xx, `-32603` / `-32700`, an empty or unreadable body, not exactly one JSON document, `jq` or `curl` missing, and Community SaaS with no credential because the registration did not complete (no request is sent and no stamp written) | **blocked** (the default). With `AXONFLOW_FAIL_MODE=open`: runs, with a notice on stderr only | alert. With `open`: passes, notice on stderr only |
+| Hook input that is not a JSON object | **blocked** | alert |
+| `scripts/lib/failure-posture.sh` missing (a broken install) | **blocked**, naming the file | alert, naming it |
+
+- **On Cursor, an unreachable AxonFlow blocks by default.** Cursor's hook contract shows the person a message only when a call is denied ([Cursor Docs: Hooks](https://cursor.com/docs/hooks): `user_message` is "shown to user when denied"), so a call that ran ungoverned could not be shown to them at all. **`AXONFLOW_FAIL_MODE=open`** (any case) lets such calls run anyway; under it the call runs **silently to the person, by the host's design**: the notice goes to stderr, which Cursor does not document showing. Unset, empty, `closed` and any other value block. The switch never loosens a 401, a 429, a refusal or a policy deny. This default differs from the Claude Code and Codex plugins, where `open` is the default, because those hosts can show a notice for a call that runs.
+- **What a broken hook does.** Cursor documents exit code 2 as a deny and any other non-zero exit as a non-blocking error: a pre hook that exits 2 before printing anything denies the call, and one that dies with any other exit (not executable, a missing interpreter, killed at the timeout) lets the call run. Cursor also blocks a permission hook whose output is invalid JSON or does not match its schema. This hook prints at most one JSON document, exits 2 on every block but the shell-write redaction (its deny JSON on exit 0), and keeps its work inside the timeout (a 13-second budget against the 15-second `hooks.json` timeout).
+- **PostToolUse reads what Cursor documents:** `postToolUse`'s `tool_output` is a JSON-encoded string (parsed; a string that is not JSON is scanned as it came), `afterFileEdit`'s `edits[].new_string` is scanned, `afterShellExecution`'s `output` would be read if that event were registered (this plugin's `hooks/hooks.json` does not register it: shell output reaches the hook through `postToolUse`), and the legacy object `tool_response` (`{stdout, exitCode}`) is still read. Before this change the hook read only the legacy object, so documented `postToolUse` outputs and `afterFileEdit` edits went unscanned.
+- **The shared back-off file** is `${XDG_CACHE_HOME:-$HOME/.cache}/axonflow/throttle-until`, one line, `<epoch> <limit_type>`. The Cursor, Claude Code and Codex hooks (and, on Linux, the OpenClaw plugin) read and write the same file, so a stamp written by one plugin can block another. This plugin honours an `auth_failure` stamp for its own 300-second cooldown after the file was written, whatever deadline the file carries, and a request-rate limit (`daily_quota`, `per_minute`) for at most 300 seconds after it was written (a stamp written more than 60 seconds in the future counts as past that); any other stamp blocks nothing here and is left on disk for the plugin that wrote it. The file is removed when its deadline passes. After fixing a credential, delete it to retry at once.
+- **Nothing is skipped for lack of content.** A call whose input has nothing to check (an MCP call with no arguments, a NotebookEdit delete, an empty command) is checked as the tool's name plus the input's plain fields.
+- **The audit record** a PostToolUse call sends carries `success` only when the tool's result says how it ended (a numeric `exitCode` or a boolean `success`).
 
 ---
 
@@ -480,7 +508,7 @@ When the plugin's hooks hit a Free-tier cap (200 events/day, 2 active custom pol
 [AxonFlow] Upgrade: https://buy.stripe.com/bJe28qbztcdVchjdkw8k800
 ```
 
-The plugin also stamps a local back-off file from the response's `Retry-After` header so subsequent governed calls fall through immediately (no thundering herd against the agent) until the cap clears. The upgrade nudge is shown at most once per UTC day so it doesn't spam every hook.
+The plugin also stamps the shared back-off file ([below](#when-axonflow-cannot-decide)). A request-rate limit (`daily_quota`, `per_minute`) blocks governed calls locally, with no request sent, for at most 300 seconds after it was stamped; then the plugin asks the platform again, which answers the limit again if it still holds. A feature or object-count limit (`feature_pro_only`, `hitl_approvals_window`, `decision_list_size`) shows its nudge and blocks nothing beyond the call it answered. The upgrade nudge is shown at most once per UTC day so it doesn't spam every hook.
 
 ---
 

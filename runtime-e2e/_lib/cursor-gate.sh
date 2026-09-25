@@ -19,6 +19,31 @@ set -uo pipefail
 : "${AXONFLOW_CLIENT_SECRET:=demo-secret}"
 : "${EVIDENCE_FRESHNESS_DAYS:=60}"
 
+# runtime_e2e_refuse_production <url> <what this suite writes there>
+#
+# Production Community SaaS (https://try.getaxonflow.com) is never a default
+# target: a suite that registers a tenant, writes a policy or edits the
+# database there changes live state (axonflow-enterprise#4249, comments
+# 5684192928 and 5694502320). When <url>'s host is try.getaxonflow.com the
+# suite SKIPs, naming what it would write, unless the operator set
+# AXONFLOW_E2E_ALLOW_PRODUCTION=1 for this run. Any other host returns.
+runtime_e2e_refuse_production() {
+  local url="$1" writes="$2" host
+  host=$(printf '%s' "$url" | sed -E 's#^[A-Za-z][A-Za-z0-9+.-]*://##; s#^[^@/]*@##; s#[:/?#].*$##' | tr '[:upper:]' '[:lower:]')
+  case "$host" in
+    try.getaxonflow.com|try.getaxonflow.com.) ;;
+    *) return 0 ;;
+  esac
+  if [ "${AXONFLOW_E2E_ALLOW_PRODUCTION:-}" = "1" ]; then
+    echo "WARNING: running against PRODUCTION Community SaaS at $url (AXONFLOW_E2E_ALLOW_PRODUCTION=1); this suite $writes"
+    return 0
+  fi
+  echo "SKIP: $url is PRODUCTION Community SaaS, and this suite $writes."
+  echo "      Point it at a stack you own, or set AXONFLOW_E2E_ALLOW_PRODUCTION=1 to run it there deliberately."
+  exit 0
+}
+
+
 # cursor_gate <script-dir> <mcp-tool-name>...
 cursor_gate() {
   local script_dir="$1"
@@ -68,7 +93,7 @@ cursor_gate() {
       "$AXONFLOW_ENDPOINT/api/v1/mcp-server")
     local mcp_tool
     for mcp_tool in "${mcp_tools[@]}"; do
-      if printf '%s' "$list_resp" | grep -q "\"name\":\"$mcp_tool\""; then
+      if printf '%s' "$list_resp" | grep "\"name\":\"$mcp_tool\"" >/dev/null; then
         echo "PASS: MCP server advertises $mcp_tool"
       else
         echo "FAIL: MCP server did not advertise $mcp_tool - wiring is wrong"
@@ -100,19 +125,27 @@ cursor_gate() {
     echo "FAIL: EVIDENCE.md missing — run MANUAL_RUNBOOK.md and check in the captured output"
     errors=$((errors + 1))
   else
-    local mtime_s now_s age_days
-    if [ "$(uname)" = "Darwin" ]; then
-      mtime_s=$(stat -f %m "$script_dir/EVIDENCE.md")
-    else
-      mtime_s=$(stat -c %Y "$script_dir/EVIDENCE.md")
+    # Freshness is the RUN DATE the evidence records, not the file's mtime:
+    # a clone or checkout resets mtime to now, so an mtime check passed on
+    # evidence of any age, and editing the file's text refreshed it too.
+    local run_date run_s now_s age_days
+    run_date=$(sed -n 's/^\*\*Run date (UTC):\*\* *\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\).*/\1/p' "$script_dir/EVIDENCE.md" | head -1)
+    run_s=""
+    if [ -n "$run_date" ]; then
+      run_s=$(date -u -j -f "%Y-%m-%d" "$run_date" +%s 2>/dev/null || date -u -d "$run_date" +%s 2>/dev/null || echo "")
     fi
-    now_s=$(date +%s)
-    age_days=$(( (now_s - mtime_s) / 86400 ))
-    if [ "$age_days" -gt "$EVIDENCE_FRESHNESS_DAYS" ]; then
-      echo "FAIL: EVIDENCE.md is $age_days days old (>${EVIDENCE_FRESHNESS_DAYS}d) — re-run the manual runbook"
+    if [ -z "$run_s" ]; then
+      echo "FAIL: EVIDENCE.md records no readable '**Run date (UTC):** YYYY-MM-DD' line"
       errors=$((errors + 1))
     else
-      echo "PASS: EVIDENCE.md is $age_days days old (≤ ${EVIDENCE_FRESHNESS_DAYS}-day window)"
+      now_s=$(date -u +%s)
+      age_days=$(( (now_s - run_s) / 86400 ))
+      if [ "$age_days" -gt "$EVIDENCE_FRESHNESS_DAYS" ]; then
+        echo "FAIL: EVIDENCE.md records a run $age_days days old ($run_date, >${EVIDENCE_FRESHNESS_DAYS}d) — re-run the manual runbook"
+        errors=$((errors + 1))
+      else
+        echo "PASS: EVIDENCE.md records a run $age_days days old ($run_date, ≤ ${EVIDENCE_FRESHNESS_DAYS}-day window)"
+      fi
     fi
   fi
 

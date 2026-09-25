@@ -32,34 +32,77 @@ else
   exit 0
 fi
 
-WORKDIR=$(mktemp -d)
-trap 'rm -rf "$WORKDIR"' EXIT
-mkdir -p "$WORKDIR/.cursor"
-cp ../../mcp.json "$WORKDIR/.cursor/mcp.json"
+# run_cursor_against <mcp.json>: launch Cursor on a workspace whose
+# .cursor/mcp.json is that file, let the MCP server activate, quit, and print
+# the proxy lines this launch added.
+run_cursor_against() {
+  local mcp="$1" workdir before after
+  workdir=$(mktemp -d)
+  mkdir -p "$workdir/.cursor"
+  cp "$mcp" "$workdir/.cursor/mcp.json"
+  before=$(wc -l < "$PROXY_LOG")
+  "$CURSOR_BIN" "$workdir" >/dev/null 2>&1 &
+  local pid=$!
+  sleep 30
+  osascript -e 'quit app "Cursor"' 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  after=$(wc -l < "$PROXY_LOG")
+  tail -n "$((after - before))" "$PROXY_LOG"
+  rm -rf "$workdir"
+}
 
-LINES_BEFORE=$(wc -l < "$PROXY_LOG")
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+FAILED=0
 
-"$CURSOR_BIN" "$WORKDIR" >/dev/null 2>&1 &
-CURSOR_PID=$!
-sleep 30
-osascript -e 'quit app "Cursor"' 2>/dev/null || true
-wait "$CURSOR_PID" 2>/dev/null || true
-
-LINES_AFTER=$(wc -l < "$PROXY_LOG")
-NEW_LINES=$((LINES_AFTER - LINES_BEFORE))
-
-HITS=$(tail -n "$NEW_LINES" "$PROXY_LOG" | grep -c 'X-Axonflow-Client=cursor-plugin/' || true)
+NEW=$(run_cursor_against "$PLUGIN_DIR/mcp.json")
+HITS=$(grep -c 'X-Axonflow-Client=cursor-plugin/' <<<"$NEW" || true)
 if [ "$HITS" -gt 0 ]; then
   echo "PASS: $HITS proxy hit(s) carrying X-Axonflow-Client=cursor-plugin/* — Cursor honored the headers field"
-  exit 0
+else
+  echo "FAIL: no proxy hit carrying X-Axonflow-Client=cursor-plugin/*."
+  echo "Last 5 proxy lines:"
+  tail -5 "$PROXY_LOG" >&2
+  echo ""
+  echo "Possible causes:"
+  echo "  1. Cursor didn't activate the MCP config (may need manual user interaction)."
+  echo "  2. Cursor doesn't honor 'headers' field in mcp.json — would need a stdio bridge."
+  echo "  3. The proxy isn't running."
+  FAILED=1
 fi
 
-echo "FAIL: no proxy hit carrying X-Axonflow-Client=cursor-plugin/*."
-echo "Last 5 proxy lines:"
-tail -5 "$PROXY_LOG" >&2
-echo ""
-echo "Possible causes:"
-echo "  1. Cursor didn't activate the MCP config (may need manual user interaction)."
-echo "  2. Cursor doesn't honor 'headers' field in mcp.json — would need a stdio bridge."
-echo "  3. The proxy isn't running."
-exit 1
+# The ADR-065 capability handshake (cursor#95), EVIDENCE-GATED: it needs a
+# supervised Cursor launch and a proxy that logs, per request, either
+# `X-Axonflow-PEP-Handshake=<value>` (the header present, possibly empty) or
+# nothing for that header when it is absent. Opt in with
+# AXONFLOW_E2E_CURSOR_HANDSHAKE=1. It settles what the wire-level stage 3 of
+# runtime-e2e/pep_capability_handshake cannot: what CURSOR sends.
+if [ "${AXONFLOW_E2E_CURSOR_HANDSHAKE:-}" = "1" ]; then
+  # 1. No audience: the shipped template must make Cursor send NO handshake
+  #    header at all. An empty one is malformed and refuses the connection.
+  NEW=$(unset AXONFLOW_PEP_AUDIENCE; run_cursor_against "$PLUGIN_DIR/mcp.json")
+  if grep -q 'X-Axonflow-PEP-Handshake=' <<<"$NEW"; then
+    echo "FAIL: with no audience Cursor sent an X-Axonflow-PEP-Handshake header: $(grep -m1 'X-Axonflow-PEP-Handshake=' <<<"$NEW")"
+    FAILED=1
+  else
+    echo "PASS: with no audience Cursor sent no X-Axonflow-PEP-Handshake header"
+  fi
+  # 2. An audience, written by scripts/configure-mcp-handshake.sh: every
+  #    request carries the encoder's value.
+  CONFIGURED=$(mktemp)
+  cp "$PLUGIN_DIR/mcp.json" "$CONFIGURED"
+  AXONFLOW_PEP_AUDIENCE="${AXONFLOW_PEP_AUDIENCE:-axonflow-decision-proof}" bash "$PLUGIN_DIR/scripts/configure-mcp-handshake.sh" "$CONFIGURED" >/dev/null
+  WANT=$(jq -r '.mcpServers.axonflow.headers["X-Axonflow-PEP-Handshake"]' "$CONFIGURED")
+  NEW=$(run_cursor_against "$CONFIGURED")
+  rm -f "$CONFIGURED"
+  if grep -qF "X-Axonflow-PEP-Handshake=$WANT" <<<"$NEW"; then
+    echo "PASS: with an audience Cursor sent the handshake the writer configured"
+  else
+    echo "FAIL: with an audience Cursor did not send X-Axonflow-PEP-Handshake=$WANT"
+    FAILED=1
+  fi
+else
+  echo "SKIP: the handshake legs (set AXONFLOW_E2E_CURSOR_HANDSHAKE=1; evidence-gated, see README.md)"
+fi
+
+exit "$FAILED"

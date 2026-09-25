@@ -65,7 +65,7 @@ if [ $EXIT_CODE -ne 0 ]; then
 fi
 
 # Assertion 1: status output MUST surface the new label as a kv line.
-if printf '%s\n' "$OUT" | grep -qE '^\s*client_id:\s+cs_test_client_xyz789'; then
+if printf '%s\n' "$OUT" | grep -E '^\s*client_id:\s+cs_test_client_xyz789' >/dev/null; then
   echo "PASS: status output emits 'client_id:' label"
   PASS=$((PASS + 1))
 else
@@ -77,7 +77,7 @@ fi
 # Assertion 2: status output MUST NOT use the legacy `tenant_id:` label
 # as a primary kv line (the bridge note `(formerly tenant_id)` is fine
 # — it's a parenthetical, not a labeled field).
-if printf '%s\n' "$OUT" | grep -qE '^\s*tenant_id:\s+'; then
+if printf '%s\n' "$OUT" | grep -E '^\s*tenant_id:\s+' >/dev/null; then
   echo "FAIL: status output still uses 'tenant_id:' as primary label (regression)"
   printf '%s\n' "$OUT"
   FAIL=$((FAIL + 1))
@@ -88,7 +88,7 @@ fi
 
 # Assertion 3: bridge note "(formerly tenant_id)" present alongside the
 # new label so v1.4.x users connect the term. Removable in v1.6.0.
-if printf '%s\n' "$OUT" | grep -qF '(formerly tenant_id)'; then
+if printf '%s\n' "$OUT" | grep -F '(formerly tenant_id)' >/dev/null; then
   echo "PASS: bridge note '(formerly tenant_id)' present for v1.4.x → v1.5.0 transition"
   PASS=$((PASS + 1))
 else
@@ -110,7 +110,7 @@ fi
 
 # Assertion 5: upgrade hint references the new label and bridges to the
 # Stripe form's still-legacy label.
-if printf '%s\n' "$OUT" | grep -qF "copy your client_id"; then
+if printf '%s\n' "$OUT" | grep -F "copy your client_id" >/dev/null; then
   echo "PASS: upgrade hint uses 'client_id' terminology"
   PASS=$((PASS + 1))
 else

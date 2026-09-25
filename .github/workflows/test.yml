@@ -23,7 +23,7 @@ jobs:
 
       - name: Check shell script syntax
         run: |
-          for f in scripts/*.sh tests/*.sh tests/e2e/*.sh; do
+          for f in scripts/*.sh scripts/lib/*.sh tests/*.sh tests/e2e/*.sh; do
             bash -n "$f" && echo "✓ $f" || exit 1
           done
 
@@ -42,6 +42,11 @@ jobs:
 
       - name: Run mcp.json ↔ plugin.json version-alignment gate (#2943)
         run: bash tests/test-mcp-json-alignment.sh
+
+      # A `producer | grep -q` under pipefail can read a match as a miss. The
+      # guard proves itself on its fixtures first, then scans the repository.
+      - name: Guard - no grep -q under pipefail
+        run: bash tests/no-grep-q-under-pipefail.sh
 
       - name: Run hook regression tests (mock server)
         run: bash tests/test-hooks.sh

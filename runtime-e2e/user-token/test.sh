@@ -109,7 +109,7 @@ echo "--- Leg 0: unconfigured (marker tool=$MARK0) ---"
 # pre-plane row observable (same approach as the reference e2e).
 echo "{\"tool_name\":\"${MARK0}pre\",\"tool_input\":{\"command\":\"rm -rf / --no-preserve-root\"}}" \
   | env -u AXONFLOW_USER_TOKEN HOME="$HOME0" "$PRE_HOOK" >/dev/null 2>&1
-echo "{\"tool_name\":\"${MARK0}post\",\"tool_input\":{\"command\":\"echo leg0\"},\"tool_response\":{\"stdout\":\"leg0\",\"exitCode\":0}}" \
+echo "{\"tool_name\":\"${MARK0}post\",\"tool_input\":{\"command\":\"echo leg0\"},\"tool_output\":\"{\\\"exitCode\\\":0,\\\"stdout\\\":\\\"leg0\\\"}\"}" \
   | env -u AXONFLOW_USER_TOKEN HOME="$HOME0" "$POST_HOOK" >/dev/null 2>&1
 PRE0=$(wait_count "SELECT count(*) FROM audit_logs WHERE query='mcp check_policy: cursor.${MARK0}pre';" 1)
 POST0=$(wait_count "SELECT count(*) FROM audit_logs WHERE request_type='tool_call_audit' AND query='Tool: ${MARK0}post';" 1)
@@ -207,7 +207,7 @@ echo "{\"tool_name\":\"${MARK1}pre\",\"tool_input\":{\"command\":\"rm -rf / --no
 mkdir -p "$HOME1/.config/axonflow"
 printf '{"token":"%s"}' "$TOKEN" > "$HOME1/.config/axonflow/user-token.json"
 chmod 600 "$HOME1/.config/axonflow/user-token.json"
-echo "{\"tool_name\":\"${MARK1}post\",\"tool_input\":{\"command\":\"echo leg1\"},\"tool_response\":{\"stdout\":\"leg1\",\"exitCode\":0}}" \
+echo "{\"tool_name\":\"${MARK1}post\",\"tool_input\":{\"command\":\"echo leg1\"},\"tool_output\":\"{\\\"exitCode\\\":0,\\\"stdout\\\":\\\"leg1\\\"}\"}" \
   | env -u AXONFLOW_USER_TOKEN HOME="$HOME1" "$POST_HOOK" >/dev/null 2>&1
 
 CHK1=$(wait_count "SELECT count(*) FROM audit_logs WHERE query='mcp check_policy: cursor.${MARK1}pre' AND LOWER(user_email)=LOWER('$TOKEN_EMAIL_CANON');" 1)

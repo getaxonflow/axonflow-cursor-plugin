@@ -1,0 +1,17 @@
+{
+  "conversation_id": "00000000-0000-0000-0000-000000000001",
+  "generation_id": "00000000-0000-0000-0000-000000000002",
+  "model": "example-model",
+  "model_id": "example-model",
+  "model_params": [],
+  "cursor_version": "0.0.0",
+  "workspace_roots": ["/home/user/project"],
+  "user_email": null,
+  "transcript_path": null,
+  "hook_event_name": "preToolUse",
+  "tool_name": "Write",
+  "tool_input": { "file_path": "/home/user/project/notes.txt", "content": "hello world" },
+  "tool_use_id": "tool-use-0002",
+  "cwd": "/home/user/project",
+  "agent_message": "Writing notes..."
+}
