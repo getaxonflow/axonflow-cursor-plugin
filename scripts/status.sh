@@ -52,16 +52,17 @@ fi
 # inspecting an alternate-HOME install; not a substitute for the canonical
 # location.
 CONFIG_DIR="${AXONFLOW_CONFIG_DIR:-${HOME}/.config/axonflow}"
-REGISTRATION_FILE="${CONFIG_DIR}/try-registration.json"
+REGISTRATION_FILE="${CONFIG_DIR}/hosted-cursor.json"
+[ -e "$REGISTRATION_FILE" ] || REGISTRATION_FILE="${CONFIG_DIR}/try-registration.json"
 LICENSE_TOKEN_FILE="${CONFIG_DIR}/license-token"
 UPGRADE_URL="${AXONFLOW_UPGRADE_URL:-https://getaxonflow.com/pricing/}"
 
-# client_id from try-registration.json. The JSON field is still
+# client_id from the plugin link or legacy try-registration.json. The JSON field is still
 # `tenant_id` on disk (file-format compat with existing installs from
 # v1.4.0 and earlier); we read it under its old key but surface it under
 # the new label. Falls back to a clear hint when missing so the buyer
-# knows what to do (most paths auto-register on the next governed tool
-# call; if the file was deleted, recovery re-mints it).
+# knows what to do (new installations link through the verified Portal;
+# if the file was deleted, recovery re-mints it).
 CLIENT_ID=""
 TENANT_HINT=""
 if [ -f "$REGISTRATION_FILE" ]; then
@@ -76,7 +77,7 @@ if [ -f "$REGISTRATION_FILE" ]; then
 fi
 if [ -z "$CLIENT_ID" ]; then
   CLIENT_ID="(not registered)"
-  TENANT_HINT="Lost your registration? Run scripts/recover-credentials.sh"
+  TENANT_HINT="Lost your registration? Open https://portal.try.getaxonflow.com/hosted/start and run scripts/hosted-link.mjs; legacy users can run scripts/recover-credentials.sh"
 fi
 
 # Tier resolution: env first, then file (mode 0600 only — same gate as

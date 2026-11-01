@@ -13,7 +13,19 @@
 # Fail-open: network failures → exit 0 (allow)
 # Fail-closed: auth/config errors → exit 2 (block)
 
-# Fail-open: if dependencies missing, allow the tool call
+# A Hosted hook without its dependencies cannot check a governed call.
+case "${AXONFLOW_ENDPOINT:-}" in
+  ""|https://try.getaxonflow.com|https://try-staging.getaxonflow.com)
+    if [ -z "${AXONFLOW_AUTH:-}" ] || [ -n "${AXONFLOW_ENDPOINT:-}" ]; then
+      if ! command -v jq >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+        echo "[AxonFlow] Governance blocked: install jq and curl before using Hosted." >&2
+        exit 2
+      fi
+    fi
+    ;;
+esac
+
+# Preserve the existing self-hosted fail behavior when dependencies are absent.
 if ! command -v jq &>/dev/null; then
   exit 0
 fi
@@ -37,6 +49,9 @@ else
   ENDPOINT="${AXONFLOW_ENDPOINT:-http://localhost:8080}"
   AXONFLOW_MODE="self-hosted"
 fi
+case "$ENDPOINT" in
+  https://try.getaxonflow.com|https://try-staging.getaxonflow.com) AXONFLOW_MODE="community-saas" ;;
+esac
 AUTH="${AXONFLOW_AUTH:-}"
 REQUEST_TIMEOUT_SECONDS="${AXONFLOW_TIMEOUT_SECONDS:-8}"
 export AXONFLOW_MODE
@@ -81,12 +96,15 @@ if [ -n "$LICENSE_TOKEN" ]; then
 fi
 echo "[AxonFlow] Connected to AxonFlow at ${ENDPOINT} (mode=${AXONFLOW_MODE})${TIER_SUFFIX}" >&2
 
-# Community-SaaS bootstrap: register with try.getaxonflow.com on first run and
-# load the resulting Basic-auth credential into AXONFLOW_AUTH. No-op when the
-# user has set explicit config (AXONFLOW_MODE != community-saas).
+# Load an existing protected Hosted credential. Fresh installations must
+# complete Portal verification and explicit device linking first.
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/community-saas-bootstrap.sh"
 AUTH="${AXONFLOW_AUTH:-}"
+if [ "$AXONFLOW_MODE" = "community-saas" ] && [ -z "$AUTH" ]; then
+  echo "[AxonFlow] Governance blocked: open https://portal.try.getaxonflow.com/hosted/start, run scripts/hosted-link.mjs, approve the code, then restart Cursor." >&2
+  exit 2
+fi
 
 # Build header array safely (avoids word-splitting). The license-token header
 # is appended whenever LICENSE_TOKEN is set; the platform middleware treats
