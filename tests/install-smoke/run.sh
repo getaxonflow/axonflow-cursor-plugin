@@ -73,6 +73,10 @@ AXONFLOW_TEST_PLUGIN_ROOT="$STAGE_DIR" bash "$PLUGIN_DIR/tests/test-hosted-link.
   && pass "staged Hosted device link and credential setup" \
   || fail "staged Hosted device link and credential setup"
 
+bash "$PLUGIN_DIR/tests/test-hosted-e2e-observer.sh" >"$LOG_DIR/hosted-e2e-observer.log" 2>&1 \
+  && pass "Hosted real-stack proof requires an observed Agent decision" \
+  || fail "Hosted real-stack proof accepted a missing Agent decision"
+
 # 2b. Status-script smoke. Drives status.sh against an isolated $HOME so it
 # never touches the developer's real ~/.config/axonflow. Asserts:
 #   - tenant_id from try-registration.json renders into output
