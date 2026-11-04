@@ -106,7 +106,7 @@ Go to Settings (Cmd+Shift+J) → Plugins. You should see:
 
 | # | Scenario | Expected | Verified? |
 |---|---|---|---|
-| 5.1 | Kill AxonFlow while plugin is connected | Hooks fail-open (commands execute). MCP tools return errors. | Not yet tested |
+| 5.1 | Kill self-hosted AxonFlow while plugin is connected | Hooks fail-open (commands execute). Hosted hooks block without an Agent decision. MCP tools return errors. | Not yet tested |
 | 5.2 | Invalid auth in enterprise mode | Hooks fail-closed (exit 2). MCP tools unavailable. | Not yet tested |
 
 ---
@@ -148,7 +148,7 @@ Go to Settings (Cmd+Shift+J) → Plugins. You should see:
 ### Exit codes
 - **Exit 0**: Hook succeeded, use JSON output
 - **Exit 2**: Block the action (equivalent to `permission: "deny"`)
-- **Other**: Hook failed, action proceeds (fail-open)
+- **Other self-hosted failures**: Hook failed, action proceeds (fail-open). Hosted transport failures block.
 
 ### Output format (preToolUse)
 ```json

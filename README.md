@@ -58,7 +58,9 @@ PreToolUse hook fires automatically
 **Governed tools:** `Shell`, `Write`, `Edit`, `Read`, `Task`, `NotebookEdit`, and all MCP tools (`mcp__*`). Cursor maps Claude Code's `Bash` tool to `Shell`.
 
 **Fail behavior:**
-- AxonFlow unreachable (network) → fail-open, tool execution continues
+- Hosted AxonFlow unreachable (network) → tool call denied
+- Hosted refusal, server fault, or missing policy decision → tool call blocked
+- Self-hosted AxonFlow unreachable (network) → fail-open, tool execution continues
 - AxonFlow auth/config error → fail-closed (exit 2), tool call blocked until config is fixed
 - PostToolUse failures → never block (audit and PII scan are best-effort)
 
@@ -180,7 +182,7 @@ Symlinks don't work — Cursor requires a real copy.
 
 ### Step 3: point the plugin at the platform
 
-Without this step the plugin auto-registers with Community SaaS regardless of whether you ran Step 1 — it does not auto-detect a locally-running AxonFlow. Set `AXONFLOW_ENDPOINT` (and `AXONFLOW_AUTH` if you have credentials):
+Without this step the plugin uses the Hosted endpoint; it does not auto-detect a locally running AxonFlow or create a tenant. Set `AXONFLOW_ENDPOINT` (and `AXONFLOW_AUTH` if you have credentials):
 
 ```bash
 # Self-hosted local agent — that alone flips mode to self-hosted, no other env var needed
@@ -210,7 +212,15 @@ The recommended self-hosted path is covered in [Install Step 1](#step-1-install-
 
 ### Community SaaS — for early exploration only
 
-The plugin's zero-config fallback when neither `AXONFLOW_ENDPOINT` nor `AXONFLOW_AUTH` is configured. The plugin registers a tenant with `try.getaxonflow.com` on first run and persists credentials at `~/.config/axonflow/try-registration.json` (mode `0600`).
+With neither `AXONFLOW_ENDPOINT` nor `AXONFLOW_AUTH` configured, the plugin targets `try.getaxonflow.com`. An unlinked first run blocks governed tools and points you to the verified Hosted signup. It does not call anonymous `/api/v1/register`.
+
+To link this installation:
+
+1. Open [Hosted signup](https://portal.try.getaxonflow.com/hosted/start), verify your email, and complete account and plan setup.
+2. From this plugin's install directory, run `node scripts/hosted-link.mjs` (Node.js 18 or later). The command generates a secret locally, prints a short code, and asks you to approve that code in the signed-in browser. The browser never displays or receives the reusable secret. The approved credential is saved to `~/.config/axonflow/hosted-cursor.json` with mode `0600`. An existing plugin link is left untouched unless you explicitly pass `--replace`; the legacy shared registration file is never overwritten.
+3. In the shell that launches Cursor, run `source scripts/hosted-env.sh`, then restart Cursor. Cursor's MCP configuration reads environment variables at launch; sourcing exports the linked endpoint and Basic credential without printing the secret. The hooks also read the protected file when no explicit environment configuration is present.
+
+Existing `AXONFLOW_ENDPOINT` and `AXONFLOW_AUTH` settings take precedence. Existing protected `try-registration.json` credentials continue to load until their expiry; linking never silently replaces them.
 
 **Use only for early exploration of the plugin's behaviour. Not for production workloads, regulated environments, real user data, personal data, or any other sensitive information.**
 
@@ -227,7 +237,7 @@ The endpoint runs against shared Ollama models, rate-limits at 20 req/min · 500
 For environments where no outbound traffic is permitted at all — air-gapped labs, regulated networks, classified deployments — set both env vars before the Cursor process starts:
 
 ```bash
-export AXONFLOW_COMMUNITY_SAAS=0   # disable Community SaaS auto-bootstrap
+export AXONFLOW_COMMUNITY_SAAS=0   # retain your explicit no-SaaS setting
 export AXONFLOW_TELEMETRY=off      # disable the anonymous 7-day heartbeat
 export AXONFLOW_ENDPOINT=http://your-internal-axonflow:8080
 ```
@@ -345,7 +355,7 @@ cd ~/.cursor/plugins/local/axonflow-cursor-plugin
 bash scripts/recover-credentials.sh
 ```
 
-The script prompts for the email the tenant was originally registered with, requests a magic link via `POST /api/v1/recover` (which always returns `202` to defend against email enumeration), waits for you to paste either the magic-link URL or the bare token from the email, calls `POST /api/v1/recover/verify`, and writes the new credentials to `~/.config/axonflow/try-registration.json` with mode `0600`. The community-saas bootstrap picks them up on the next governed tool call — no shell re-export, no Cursor reload.
+The legacy recovery script prompts for the email the tenant was originally registered with, requests a magic link via `POST /api/v1/recover` (which always returns `202` to defend against email enumeration), waits for you to paste either the magic-link URL or the bare token from the email, calls `POST /api/v1/recover/verify`, and writes the new credentials to `~/.config/axonflow/try-registration.json` with mode `0600`. The hook reads them on the next governed tool call when no `hosted-cursor.json` link exists. For a Hosted linked installation, rerun `node scripts/hosted-link.mjs --replace` and approve the new code in the verified Portal.
 
 In the chat, use the `/recover-credentials` skill to have the agent walk you through the same flow. The skill instructs the agent to invoke the script via the Shell tool; you fill in the email and token in the integrated terminal.
 

@@ -13,7 +13,57 @@
 # Fail-open: network failures → exit 0 (allow)
 # Fail-closed: auth/config errors → exit 2 (block)
 
-# Fail-open: if dependencies missing, allow the tool call
+# Recognize equivalent Hosted origins before dependency checks or mode selection.
+# A malformed URL on the Hosted hostname must not take the self-hosted fail-open
+# path. Lookalike hostnames remain self-hosted.
+axonflow_canonical_hosted_endpoint() {
+  local url="$1" scheme authority authority_host suffix host
+  [[ "$url" =~ ^([A-Za-z][A-Za-z0-9+.-]*)://([^/?#]+)(.*)$ ]] || return 1
+  scheme=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+  authority=$(printf '%s' "${BASH_REMATCH[2]}" | tr '[:upper:]' '[:lower:]')
+  suffix="${BASH_REMATCH[3]}"
+  if [[ "$authority" == *@* ]]; then
+    authority_host="${authority##*@}"
+    case "$authority_host" in
+      try.getaxonflow.com|try.getaxonflow.com.|try.getaxonflow.com:*|try.getaxonflow.com.:*|try-staging.getaxonflow.com|try-staging.getaxonflow.com.|try-staging.getaxonflow.com:*|try-staging.getaxonflow.com.:*) return 2 ;;
+    esac
+  fi
+  case "$authority" in
+    try.getaxonflow.com|try.getaxonflow.com.|try.getaxonflow.com:*|try.getaxonflow.com.:*) host=try.getaxonflow.com ;;
+    try-staging.getaxonflow.com|try-staging.getaxonflow.com.|try-staging.getaxonflow.com:*|try-staging.getaxonflow.com.:*) host=try-staging.getaxonflow.com ;;
+    *) return 1 ;;
+  esac
+  if [[ "$scheme" != https || ! "$suffix" =~ ^/*$ ]]; then return 2; fi
+  case "$authority" in
+    "$host"|"$host."|"$host:443"|"$host.:443") printf 'https://%s' "$host" ;;
+    *) return 2 ;;
+  esac
+}
+if [ -n "${AXONFLOW_ENDPOINT:-}" ]; then
+  hosted_origin=$(axonflow_canonical_hosted_endpoint "$AXONFLOW_ENDPOINT")
+  hosted_status=$?
+  if [ "$hosted_status" -eq 0 ]; then
+    AXONFLOW_ENDPOINT="$hosted_origin"
+    export AXONFLOW_ENDPOINT
+  elif [ "$hosted_status" -eq 2 ]; then
+    echo "[AxonFlow] Governance blocked: invalid Hosted endpoint URL." >&2
+    exit 2
+  fi
+fi
+
+# A Hosted hook without its dependencies cannot check a governed call.
+case "${AXONFLOW_ENDPOINT:-}" in
+  ""|https://try.getaxonflow.com|https://try-staging.getaxonflow.com)
+    if [ -z "${AXONFLOW_AUTH:-}" ] || [ -n "${AXONFLOW_ENDPOINT:-}" ]; then
+      if ! command -v jq >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+        echo "[AxonFlow] Governance blocked: install jq and curl before using Hosted." >&2
+        exit 2
+      fi
+    fi
+    ;;
+esac
+
+# Preserve the existing self-hosted fail behavior when dependencies are absent.
 if ! command -v jq &>/dev/null; then
   exit 0
 fi
@@ -22,8 +72,8 @@ if ! command -v curl &>/dev/null; then
 fi
 
 # Endpoint resolution per ADR-048: default to AxonFlow Community SaaS only when
-# the user has not set explicit config. Any user-supplied AXONFLOW_ENDPOINT or
-# AXONFLOW_AUTH is honoured untouched — no silent override.
+# the user has not set explicit config. Equivalent Hosted URL spellings are
+# canonicalized above; self-hosted configuration is honored untouched.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -z "${AXONFLOW_ENDPOINT:-}" ] && [ -z "${AXONFLOW_AUTH:-}" ]; then
   ENDPOINT="https://try.getaxonflow.com"
@@ -37,6 +87,9 @@ else
   ENDPOINT="${AXONFLOW_ENDPOINT:-http://localhost:8080}"
   AXONFLOW_MODE="self-hosted"
 fi
+case "$ENDPOINT" in
+  https://try.getaxonflow.com|https://try-staging.getaxonflow.com) AXONFLOW_MODE="community-saas" ;;
+esac
 AUTH="${AXONFLOW_AUTH:-}"
 REQUEST_TIMEOUT_SECONDS="${AXONFLOW_TIMEOUT_SECONDS:-8}"
 export AXONFLOW_MODE
@@ -81,12 +134,15 @@ if [ -n "$LICENSE_TOKEN" ]; then
 fi
 echo "[AxonFlow] Connected to AxonFlow at ${ENDPOINT} (mode=${AXONFLOW_MODE})${TIER_SUFFIX}" >&2
 
-# Community-SaaS bootstrap: register with try.getaxonflow.com on first run and
-# load the resulting Basic-auth credential into AXONFLOW_AUTH. No-op when the
-# user has set explicit config (AXONFLOW_MODE != community-saas).
+# Load an existing protected Hosted credential. Fresh installations must
+# complete Portal verification and explicit device linking first.
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/community-saas-bootstrap.sh"
 AUTH="${AXONFLOW_AUTH:-}"
+if [ "$AXONFLOW_MODE" = "community-saas" ] && [ -z "$AUTH" ]; then
+  echo "[AxonFlow] Governance blocked: open https://portal.try.getaxonflow.com/hosted/start, run scripts/hosted-link.mjs, approve the code, then restart Cursor." >&2
+  exit 2
+fi
 
 # Build header array safely (avoids word-splitting). The license-token header
 # is appended whenever LICENSE_TOKEN is set; the platform middleware treats
@@ -233,19 +289,21 @@ fi
 # envelope's resets_at deadline. While a hosted Free-tier limit holds, the
 # tool call is BLOCKED with the limit named (the upgrade prompt was surfaced
 # when the throttle landed): over the cap is deny, not governance off (ruled
-# 2026-09-14; reversible here). The 401 pause (auth_failure) falls open.
+# 2026-09-14; reversible here). Hosted also blocks during the 401 cooldown.
 if axonflow_throttle_active; then
   if [ "$(axonflow_throttle_reason)" != "auth_failure" ]; then
     axonflow_pre_deny "$AXONFLOW_LIMIT_DENY_REASON"
+  fi
+  if [ "$AXONFLOW_MODE" = "community-saas" ]; then
+    axonflow_pre_deny "AxonFlow governance blocked: Hosted authentication cooldown is active."
   fi
   exit 0
 fi
 
 # Call AxonFlow check_policy via MCP server.
 #
-# Issue #1545 Direction 3: fail OPEN on any network-level failure (timeout,
-# DNS failure, connection refused, 5xx). Only auth/config errors reported
-# by AxonFlow fail closed (see the JSONRPC_ERROR handling below).
+# Self-hosted keeps its historical fail-open behavior on transport failures.
+# Hosted requires an observed decision before the tool can run.
 #
 # V1 Plugin Pro: capture HTTP status + headers + body separately so the
 # envelope handler can detect 429 / 403 and stamp the throttle deadline
@@ -277,10 +335,12 @@ HTTP_CODE=$(curl -sS --max-time "$REQUEST_TIMEOUT_SECONDS" \
     }')" 2>/dev/null)
 CURL_EXIT=$?
 
-# Any curl-level failure — timeout, DNS failure, connection refused, TCP
-# reset — fails open. The only reason to fail closed is a well-formed
-# auth/config error from AxonFlow itself, handled below.
+# A Hosted curl-level failure has no decision; block it. Self-hosted keeps its
+# historical fail-open behavior for timeout, DNS failure, and connection loss.
 if [ "$CURL_EXIT" -ne 0 ]; then
+  if [ "$AXONFLOW_MODE" = "community-saas" ]; then
+    axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent could not be reached."
+  fi
   exit 0
 fi
 
@@ -302,7 +362,7 @@ fi
 # the agent is telling us "your credential maps to no tenant" — an expected
 # fail-closed signal that the JSON-RPC parser below handles with `exit 2`.
 # We must NOT short-circuit that path through the auth-failure throttle
-# (which exits 0 / fail-open). Without this carve-out, PR #74 silently
+# (which exits 0 for self-hosted). Without this carve-out, PR #74 silently
 # regressed the -32001 fail-closed contract carried since #1545.
 JSONRPC_CODE_PRECHECK=""
 if [ "$HTTP_CODE" = "401" ] && [ -s "$PRECHECK_BODY" ]; then
@@ -313,13 +373,28 @@ if [ "$JSONRPC_CODE_PRECHECK" = "-32001" ]; then
   :
 else
   if axonflow_handle_auth_failure "$HTTP_CODE" "$PRECHECK_BODY" "$PRECHECK_HEADERS"; then
+    if [ "$AXONFLOW_MODE" = "community-saas" ]; then
+      axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent rejected authentication (HTTP 401)."
+    fi
     exit 0
   fi
 fi
 
+# An HTTP refusal or server fault is not a Hosted policy decision, even when
+# its body is empty or shaped unlike the expected JSON-RPC envelope.
+if [ "$AXONFLOW_MODE" = "community-saas" ] && [ "$HTTP_CODE" != "200" ]; then
+  axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent refused the policy check (HTTP ${HTTP_CODE:-unknown})."
+fi
+
 RESPONSE=$(cat "$PRECHECK_BODY")
 if [ -z "$RESPONSE" ]; then
+  if [ "$AXONFLOW_MODE" = "community-saas" ]; then
+    axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent returned no policy decision."
+  fi
   exit 0
+fi
+if [ "$AXONFLOW_MODE" = "community-saas" ] && ! echo "$RESPONSE" | jq -e 'type == "object"' >/dev/null 2>&1; then
+  axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent returned an invalid policy response."
 fi
 
 # Check for JSON-RPC error responses and apply the fail-open / fail-closed
@@ -328,8 +403,8 @@ fi
 #   Auth errors (-32001):       BLOCK — operator must fix AXONFLOW_AUTH
 #   Method not found (-32601):  BLOCK — plugin version mismatch with agent
 #   Invalid params (-32602):    BLOCK — plugin bug, operator should upgrade
-#   Parse errors (-32700):      ALLOW — transient
-#   Internal errors (-32603):   ALLOW — server-side fault, not operator's
+#   Parse errors (-32700):      Hosted BLOCK; self-hosted ALLOW
+#   Internal errors (-32603):   Hosted BLOCK; self-hosted ALLOW
 #   Everything else:            BLOCK — unknown code, fail closed (2026-09-14)
 JSONRPC_ERROR=$(echo "$RESPONSE" | jq -r '.error.message // empty' 2>/dev/null || echo "")
 if [ -n "$JSONRPC_ERROR" ]; then
@@ -349,7 +424,10 @@ if [ -n "$JSONRPC_ERROR" ]; then
       exit 2
       ;;
     -32603|-32700)
-      # Transient or server-side — fail open.
+      if [ "$AXONFLOW_MODE" = "community-saas" ]; then
+        axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent returned an error (${JSONRPC_ERROR}, code ${JSONRPC_CODE})."
+      fi
+      # Self-hosted preserves its historical fail-open behavior.
       exit 0
       ;;
     *)
@@ -359,14 +437,22 @@ if [ -n "$JSONRPC_ERROR" ]; then
   esac
 fi
 
+if [ "$AXONFLOW_MODE" = "community-saas" ] && ! echo "$RESPONSE" | jq -e \
+  '.jsonrpc == "2.0" and .id == "hook-pre" and (.result | type) == "object" and (.result.content | type) == "array" and .result.content[0].type == "text"' >/dev/null 2>&1; then
+  axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent returned an invalid policy response."
+fi
+
 # Parse the MCP response to get the tool result
 TOOL_RESULT=$(echo "$RESPONSE" | jq -r '.result.content[0].text // empty' 2>/dev/null || echo "")
 if [ -z "$TOOL_RESULT" ]; then
   # A JSON-RPC result with no tool result carries no decision: fail closed.
-  # Anything else (no result object at all) is an unexpected format: fail
-  # open for robustness, as before.
+  # Hosted requires a result. Self-hosted keeps the historical fail-open
+  # behavior when the response has no result object.
   if echo "$RESPONSE" | jq -e 'has("result")' >/dev/null 2>&1; then
     axonflow_pre_deny "AxonFlow governance blocked: the AxonFlow agent returned a policy result without a decision, so this tool call is blocked."
+  fi
+  if [ "$AXONFLOW_MODE" = "community-saas" ]; then
+    axonflow_pre_deny "AxonFlow governance blocked: Hosted Agent returned no policy decision."
   fi
   exit 0
 fi
